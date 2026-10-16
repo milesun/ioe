@@ -46,6 +46,8 @@ class Product(models.Model):
         ('5XL', '5XL'),
         ('6XL', '6XL'),
         ('7XL', '7XL'),
+        ('8XL', '8XL'),
+        ('9XL', '9XL'),
         ('other', '其他')
     ]
     
