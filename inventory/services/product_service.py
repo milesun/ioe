@@ -122,7 +122,6 @@ def search_products(query, category_id=None, active_only=True):
         products = products.filter(
             Q(name__icontains=query) | 
             Q(barcode__icontains=query) |
-            Q(sku__icontains=query) |
             Q(specification__icontains=query)
         )
     

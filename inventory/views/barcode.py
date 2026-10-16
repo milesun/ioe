@@ -170,6 +170,17 @@ def barcode_scan(request):
     """条码扫描页面，用于测试条码功能"""
     return render(request, 'inventory/barcode/barcode_scan.html')
 
+def _product_variant_data(product):
+    """收银搜索共用的商品属性，保留原值及可读名称。"""
+    return {
+        'barcode': product.barcode,
+        'size': product.size,
+        'size_display': product.get_size_display(),
+        'color': product.color,
+        'color_display': product.get_color_display(),
+    }
+
+
 def product_by_barcode(request, barcode):
     """根据条码查询商品信息的API"""
     try:
@@ -191,7 +202,8 @@ def product_by_barcode(request, barcode):
             'stock': stock,
             'category': product.category.name if product.category else '',
             'specification': product.specification,
-            'manufacturer': product.manufacturer
+            'manufacturer': product.manufacturer,
+            **_product_variant_data(product),
         })
     except inventory.models.Product.DoesNotExist:
         # 如果精确匹配失败，尝试模糊匹配条码或名称
@@ -220,7 +232,8 @@ def product_by_barcode(request, barcode):
                     'stock': stock,
                     'category': product.category.name if product.category else '',
                     'specification': product.specification,
-                    'manufacturer': product.manufacturer
+                    'manufacturer': product.manufacturer,
+                    **_product_variant_data(product),
                 })
             # 如果有多个匹配结果
             else:
@@ -236,9 +249,10 @@ def product_by_barcode(request, barcode):
                         'product_id': product.id,
                         'name': product.name,
                         'price': float(product.price),
-                        'barcode': product.barcode,
                         'stock': stock,
-                        'category': product.category.name if product.category else ''
+                        'category': product.category.name if product.category else '',
+                        'specification': product.specification,
+                        **_product_variant_data(product),
                     })
                     
                 return JsonResponse({
@@ -394,9 +408,9 @@ def product_search_api(request):
             'name': product.name,
             'price': float(product.price),
             'stock': stock,
-            'barcode': product.barcode,
             'spec': product.specification,
-            'category': product.category.name if product.category else ''
+            'category': product.category.name if product.category else '',
+            **_product_variant_data(product),
         })
     
     return JsonResponse({

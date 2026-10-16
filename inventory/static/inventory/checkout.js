@@ -10,6 +10,26 @@ document.addEventListener('DOMContentLoaded', function() {
     const memberSearchInput = document.getElementById('member-search-input');
     window.updateTotalsTimeout = null; // 用于节流 updateTotals
 
+    // 两个查询接口使用不同的 ID 和规格字段，在这里统一保留商品属性。
+    function normalizeProduct(product) {
+        return {
+            id: product.product_id || product.id,
+            name: product.name,
+            price: parseFloat(product.price) || 0,
+            stock: parseInt(product.stock, 10) || 0,
+            spec: product.specification || product.spec || '',
+            barcode: product.barcode || '',
+            size: product.size || '',
+            sizeDisplay: product.size_display || product.size || '无尺码',
+            color: product.color || '',
+            colorDisplay: product.color_display || product.color || '无颜色'
+        };
+    }
+
+    function productVariantText(product) {
+        return `尺码：${product.sizeDisplay || product.size || '无尺码'} · 颜色：${product.colorDisplay || product.color || '无颜色'}`;
+    }
+
     // 商品搜索处理
     if (productSearchInput) {
         let lastInputTime = 0;
@@ -74,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        fetch(`/api/product/search/barcode/${barcode}/`)
+        fetch(`/api/product/search/barcode/${encodeURIComponent(barcode.trim())}/`)
             .then(response => {
                 if (!response.ok) {
                     console.error(`[API Error] Network response was not ok for barcode ${barcode}:`, response.status, response.statusText);
@@ -85,25 +105,12 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 if (data.success) {
                     if (data.multiple_matches && data.products && Array.isArray(data.products) && data.products.length > 0) {
-                        // **确保传递给模态框的数据结构统一**
-                        const standardizedProducts = data.products.map(p => ({
-                            id: p.product_id || p.id, // 适配两种可能的 key
-                            name: p.name,
-                            price: parseFloat(p.price) || 0,
-                            stock: parseInt(p.stock) || 0,
-                            spec: p.specification || p.spec || '' // 适配多种可能的 key
-                        }));
+                        const standardizedProducts = data.products.map(normalizeProduct);
                         showProductSelectionModal(standardizedProducts);
                     } else if (data.product_id || (data.product && data.product.id)) {
                         // **处理单结果，强制统一结构**
                         const productSource = data.product || data; // API 可能直接返回顶级字段
-                        const productData = {
-                            id: productSource.product_id || productSource.id,
-                            name: productSource.name,
-                            price: parseFloat(productSource.price) || 0,
-                            stock: parseInt(productSource.stock) || 0,
-                            spec: productSource.specification || productSource.spec || ''
-                        };
+                        const productData = normalizeProduct(productSource);
                          // **再次校验构建的对象**
                         if (!productData.id || !productData.name) {
                             console.error("[API Error] Failed to standardize single product data:", productData, "Original data:", data);
@@ -144,14 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(data => {
                 if (data.success && data.products && Array.isArray(data.products) && data.products.length > 0) {
-                    // **确保传递给模态框的数据结构统一**
-                    const standardizedProducts = data.products.map(p => ({
-                        id: p.id, // 名称搜索 API 返回的是 id
-                        name: p.name,
-                        price: parseFloat(p.price) || 0,
-                        stock: parseInt(p.stock) || 0,
-                        spec: p.specification || p.spec || ''
-                    }));
+                    const standardizedProducts = data.products.map(normalizeProduct);
                     showProductSelectionModal(standardizedProducts);
                 } else {
                     console.warn(`[API Warning] Name search did not find valid products for ${name}. Response:`, data);
@@ -252,26 +252,32 @@ document.addEventListener('DOMContentLoaded', function() {
         showAlert('info', '已清除会员信息');
     }
 
-    // 商品选择模态框 (确保添加事件监听时使用标准化的数据)
+    // 商品属性按纯文本展示，便于区分同名商品。
     function showProductSelectionModal(products) {
         const modalBody = document.getElementById('product-selection-content');
         if (!modalBody) return;
 
-        modalBody.innerHTML = '';
+        modalBody.replaceChildren();
 
         products.forEach(product => {
             const productItem = document.createElement('div');
             productItem.className = 'card mb-2';
-            // **使用标准化后的 product 对象的属性**
+            // 这里只生成固定结构，商品内容通过 textContent 写入。
             productItem.innerHTML = `
                 <div class="card-body">
-                    <h5 class="card-title">${product.name}</h5>
-                    <p class="card-text">价格: ¥${product.price.toFixed(2)} | 库存: ${product.stock}</p>
-                    <button class="btn btn-primary select-product-btn">
+                    <h5 class="card-title text-break product-option-name"></h5>
+                    <p class="card-text mb-1 text-break product-option-variants"></p>
+                    <p class="card-text mb-1 small text-muted text-break product-option-details"></p>
+                    <p class="card-text product-option-stock"></p>
+                    <button type="button" class="btn btn-primary select-product-btn">
                         选择此商品
                     </button>
                 </div>
             `;
+            productItem.querySelector('.product-option-name').textContent = product.name;
+            productItem.querySelector('.product-option-variants').textContent = productVariantText(product);
+            productItem.querySelector('.product-option-details').textContent = `规格：${product.spec || '无规格'} · 条码：${product.barcode || '无条码'}`;
+            productItem.querySelector('.product-option-stock').textContent = `价格：¥${product.price.toFixed(2)} · 库存：${product.stock}`;
             // **将标准化数据直接附加到按钮上**
             const selectButton = productItem.querySelector('.select-product-btn');
             if (selectButton) {
@@ -287,9 +293,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             modalBody.appendChild(productItem);
         });
-
-        // 移除旧的选择器和事件绑定逻辑
-        // document.querySelectorAll('.select-product-btn').forEach(btn => { ... });
 
         // 显示模态框
         const modalElement = document.getElementById('product-selection-modal');
@@ -410,19 +413,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // **构建 row HTML**
         const rowHTML = `
-            <td>${product.name}
-                <input type="hidden" class="product-id-input" name="temp_product_id" value="${product.id}">
-                <span class="d-none product-id-display">${product.id}</span>
+            <td>
+                <span class="d-block text-break product-name"></span>
+                <small class="d-block text-muted text-break product-variants"></small>
+                <small class="d-block text-muted text-break product-barcode"></small>
+                <input type="hidden" class="product-id-input" name="temp_product_id">
+                <span class="d-none product-id-display"></span>
             </td>
             <td>
                 <div class="quantity-control">
                     <button type="button" class="btn btn-sm btn-outline-secondary decrease-btn">-</button>
-                    <input type="number" class="form-control form-control-sm quantity-input" value="1" min="1" max="${product.stock || 9999}" style="width: 60px;">
+                    <input type="number" class="form-control form-control-sm quantity-input" value="1" min="1" style="width: 60px;">
                     <button type="button" class="btn btn-sm btn-outline-secondary increase-btn">+</button>
                 </div>
             </td>
             <td>¥<input type="number" step="0.01" class="form-control form-control-sm price-input" value="${price.toFixed(2)}" style="width: 90px;"></td>
-            <td>${product.spec || '无规格'}</td>
+            <td class="product-spec text-break"></td>
             <td class="text-end subtotal">¥${price.toFixed(2)}</td>
             <td class="text-center">
                 <button type="button" class="btn btn-outline-danger btn-sm delete-btn">
@@ -431,6 +437,13 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
         `;
         newRow.innerHTML = rowHTML;
+        newRow.querySelector('.product-name').textContent = product.name;
+        newRow.querySelector('.product-variants').textContent = productVariantText(product);
+        newRow.querySelector('.product-barcode').textContent = `条码：${product.barcode || '无条码'}`;
+        newRow.querySelector('.product-spec').textContent = product.spec || '无规格';
+        newRow.querySelector('.product-id-input').value = product.id;
+        newRow.querySelector('.product-id-display').textContent = product.id;
+        newRow.querySelector('.quantity-input').max = product.stock || 9999;
 
         // **在追加前进行状态检查**
         if (productTableBody) {
@@ -835,7 +848,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         Toast.fire({
             icon: type,
-            title: message
+            titleText: message
         });
     }
 
