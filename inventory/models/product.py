@@ -37,6 +37,7 @@ class Product(models.Model):
     SIZE_CHOICES = [
         ('', '无尺码'),
         ('F', 'F'),
+        ('S', 'S'),
         ('M', 'M'),
         ('L', 'L'),
         ('XL', 'XL'),
