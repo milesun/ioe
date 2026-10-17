@@ -25,6 +25,7 @@ def index(request):
     
     # 商品统计
     total_products = Product.objects.count()
+    total_inventory_quantity = Inventory.objects.aggregate(total=Sum('quantity', default=0))['total']
     active_products = total_products
     low_stock_products = Inventory.objects.filter(quantity__lte=10).count()
     out_of_stock_products = Inventory.objects.filter(quantity=0).count()
@@ -72,6 +73,7 @@ def index(request):
     
     context = {
         'total_products': total_products,
+        'total_inventory_quantity': total_inventory_quantity,
         'active_products': active_products,
         'low_stock_products': low_stock_products,
         'out_of_stock_products': out_of_stock_products,
@@ -97,4 +99,4 @@ def index(request):
 @login_required
 def reports_index(request):
     """报表首页视图"""
-    return render(request, 'inventory/reports/index.html') 
+    return render(request, 'inventory/reports/index.html')
