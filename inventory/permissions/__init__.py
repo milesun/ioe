@@ -27,6 +27,8 @@ __all__ = [
 
 # Define common permission codenames
 PERMISSIONS = {
+    'add_aftersale': '办理退换货',
+    'view_aftersale': '查看退换货',
     # Inventory permissions
     'view_inventory': '查看库存',
     'change_inventory': '修改库存',
@@ -77,6 +79,7 @@ ROLES = {
     'sales': {
         'name': '销售员',
         'permissions': [
+            'add_aftersale', 'view_aftersale',
             'view_inventory',
             'view_product',
             'view_sale', 'add_sale',

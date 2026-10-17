@@ -112,14 +112,14 @@ class ExportService:
         # 会员消费排行
         top_members_data = []
         for idx, member in enumerate(member_data['top_members'], 1):
-            avg_order = member['period_spend'] / member['period_purchase_count'] if member['period_purchase_count'] > 0 else 0
+            avg_order = member.period_spend / member.period_purchase_count if member.period_purchase_count > 0 else 0
             top_members_data.append({
                 '排名': idx,
-                '会员姓名': member['name'],
-                '会员等级': member['level'].name,
-                '手机号': member['phone'],
-                '消费金额': f"¥{member['period_spend']:.2f}",
-                '消费次数': member['period_purchase_count'],
+                '会员姓名': member.name,
+                '会员等级': member.level.name,
+                '手机号': member.phone,
+                '消费金额': f"¥{member.period_spend:.2f}",
+                '消费次数': member.period_purchase_count,
                 '平均客单价': f"¥{avg_order:.2f}"
             })
         

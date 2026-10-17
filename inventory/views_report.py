@@ -189,7 +189,8 @@ def profit_report(request):
             
             return render(request, 'inventory/reports/profit.html', {
                 'form': form,
-                'profit_data': profit_data,
+                'summary': profit_data,
+            'profit_data': [dict(row, sales=row['total_sales'], cost=row['total_cost']) for row in ReportService.get_sales_by_period(start_date, end_date, request.POST.get('period', 'day'))],
                 'start_date': start_date,
                 'end_date': end_date
             })
@@ -208,7 +209,8 @@ def profit_report(request):
         
         return render(request, 'inventory/reports/profit.html', {
             'form': form,
-            'profit_data': profit_data,
+            'summary': profit_data,
+            'profit_data': [dict(row, sales=row['total_sales'], cost=row['total_cost']) for row in ReportService.get_sales_by_period(start_date, end_date, request.POST.get('period', 'day'))],
             'start_date': start_date,
             'end_date': end_date
         })

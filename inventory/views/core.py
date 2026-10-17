@@ -33,15 +33,12 @@ def index(request):
     completed_sales = Sale.objects.filter(status='COMPLETED')
     total_sales = completed_sales.count()
     today_sales = completed_sales.filter(created_at__date=today).count()
-    today_sales_amount = completed_sales.filter(created_at__date=today).aggregate(
-        total=Sum('final_amount')
-    )['total'] or 0
-    
+    from inventory.services.sales_ledger import sales_summary, product_totals
+    today_summary = sales_summary(today, today)
+    today_sales_amount = today_summary['total_sales']
     yesterday_sales = completed_sales.filter(created_at__date=yesterday).count()
-    yesterday_sales_amount = completed_sales.filter(created_at__date=yesterday).aggregate(
-        total=Sum('final_amount')
-    )['total'] or 0
-    
+    yesterday_sales_amount = sales_summary(yesterday, yesterday)['total_sales']
+
     # 会员统计
     total_members = Member.objects.count()
     active_members = total_members
@@ -51,9 +48,7 @@ def index(request):
     sales_trend = []
     for i in range(7):
         date = today - timedelta(days=i)
-        daily_sales = completed_sales.filter(created_at__date=date).aggregate(
-            total=Sum('final_amount')
-        )['total'] or 0
+        daily_sales = sales_summary(date, date)['total_sales']
         sales_trend.append({
             'date': date.strftime('%m-%d'),
             'amount': float(daily_sales)
@@ -61,15 +56,9 @@ def index(request):
     sales_trend.reverse()
     
     # 热销商品
-    top_products = SaleItem.objects.filter(
-        sale__status='COMPLETED', sale__created_at__gte=week_ago
-    ).values(
-        'product__name'
-    ).annotate(
-        total_qty=Sum('quantity'),
-        total_amount=Sum('subtotal')
-    ).order_by('-total_qty')[:5]
-    
+    top_products = [dict(row, total_qty=row['total_quantity'], total_amount=row['total_sales'])
+                    for row in product_totals(week_ago, today)[:5]]
+
     # 最近操作日志
     recent_logs = OperationLog.objects.all().order_by('-timestamp')[:10]
     
@@ -89,6 +78,7 @@ def index(request):
         'total_sales': total_sales,
         'today_sales': today_sales,
         'today_sales_amount': today_sales_amount,
+        'sales_summary': today_summary,
         'yesterday_sales': yesterday_sales,
         'yesterday_sales_amount': yesterday_sales_amount,
         'total_members': total_members,

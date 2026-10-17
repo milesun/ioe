@@ -1,0 +1,5 @@
+{% if perms.inventory.view_aftersale %}
+<div class="card mb-4"><div class="card-body"><h3 class="h5">退换货历史</h3>
+{% if sale.exchange_source %}<p>本单来自 <a href="{% url 'aftersale_detail' sale.exchange_source.pk %}">{{ sale.exchange_source.number }}</a>，原订单 <a href="{% url 'sale_detail' sale.exchange_source.sale_id %}">#{{ sale.exchange_source.sale_id }}</a>。</p>{% endif %}
+<div class="table-responsive"><table class="table"><thead><tr><th>售后单</th><th>类型</th><th>退回价值</th><th>换货新单</th><th>操作人 / 时间</th></tr></thead><tbody>{% for record in aftersales %}<tr><td><a href="{% url 'aftersale_detail' record.pk %}">{{ record.number }}</a></td><td>{{ record.get_kind_display }}</td><td>¥{{ record.refund_amount }}</td><td>{% if record.replacement_sale_id %}<a href="{% url 'sale_detail' record.replacement_sale_id %}">#{{ record.replacement_sale_id }}</a>{% else %}—{% endif %}</td><td>{{ record.operator.username }} · {{ record.created_at|date:'Y-m-d H:i' }}</td></tr>{% empty %}<tr><td colspan="5">本单暂无退换货记录。</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}

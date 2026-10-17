@@ -42,6 +42,7 @@
             <a class="sidebar-link {% if '/member-levels/' in request.path %}active{% endif %}" href="{% url 'member_level_list' %}"><i class="bi bi-gem" aria-hidden="true"></i>{% if request.LANGUAGE_CODE == 'en' %}Member levels{% else %}会员等级{% endif %}</a>
             <span class="nav-section">{% if request.LANGUAGE_CODE == 'en' %}INSIGHTS{% else %}数据与分析{% endif %}</span>
             <a class="sidebar-link {% if '/reports/' in request.path %}active{% endif %}" href="{% url 'reports_index' %}"><i class="bi bi-bar-chart-line" aria-hidden="true"></i>{% if request.LANGUAGE_CODE == 'en' %}Reports{% else %}报表中心{% endif %}</a>
+            {% if perms.inventory.view_aftersale %}<a class="sidebar-link" href="{% url 'aftersale_list' %}"><i class="bi bi-arrow-repeat" aria-hidden="true"></i>退换货记录</a>{% endif %}
             {% if request.user.is_superuser %}
             <a class="sidebar-link {% if '/system/' in request.path %}active{% endif %}" href="{% url 'system_settings' %}"><i class="bi bi-sliders2" aria-hidden="true"></i>{% if request.LANGUAGE_CODE == 'en' %}Settings{% else %}系统设置{% endif %}</a>
             {% endif %}

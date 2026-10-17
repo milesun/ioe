@@ -160,13 +160,16 @@ def member_detail(request, pk):
     
     sales = Sale.objects.filter(member=member).order_by('-created_at')[:20]
     
-    total_spent = Sale.objects.filter(member=member).aggregate(total=Sum('total_amount'))['total'] or 0
-    visit_count = Sale.objects.filter(member=member).count()
-    
+    from inventory.models import AfterSale
+    from inventory.services.sales_ledger import sales_summary
+    total_spent = sales_summary(member_id=member.pk)['total_sales']
+    visit_count = member.purchase_count
     thirty_days_ago = timezone.now() - timedelta(days=30)
-    recent_spent = Sale.objects.filter(member=member, created_at__gte=thirty_days_ago).aggregate(total=Sum('total_amount'))['total'] or 0
-    recent_visit_count = Sale.objects.filter(member=member, created_at__gte=thirty_days_ago).count()
-    
+    recent_summary = sales_summary(thirty_days_ago, timezone.now(), member.pk)
+    recent_spent = recent_summary['total_sales']
+    recent_visit_count = recent_summary['order_count']
+    aftersales = AfterSale.objects.filter(sale__member=member).select_related('sale', 'replacement_sale', 'operator')[:20]
+
     context = {
         'member': member,
         'transactions': transactions,
@@ -175,6 +178,7 @@ def member_detail(request, pk):
         'visit_count': visit_count,
         'recent_spent': recent_spent,
         'recent_visit_count': recent_visit_count,
+        'aftersales': aftersales,
     }
     
     return render(request, 'inventory/member/member_detail.html', context)

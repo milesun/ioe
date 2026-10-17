@@ -74,7 +74,13 @@ def inventory_transaction_list(request):
     date_from = request.GET.get('date_from', '')
     date_to = request.GET.get('date_to', '')
     
-    transactions = InventoryTransaction.objects.select_related('product', 'operator').all()
+    transactions = InventoryTransaction.objects.select_related('product', 'operator', 'aftersale').all()
+    aftersale_id = request.GET.get('aftersale', '')
+    aftersale_only = request.GET.get('aftersale_only') == '1'
+    if aftersale_id.isdigit():
+        transactions = transactions.filter(aftersale_id=aftersale_id)
+    if aftersale_only:
+        transactions = transactions.filter(aftersale__isnull=False)
     
     if transaction_type:
         transactions = transactions.filter(transaction_type=transaction_type)
@@ -118,7 +124,8 @@ def inventory_transaction_list(request):
         'search_query': search_query,
         'date_from': date_from,
         'date_to': date_to,
-        'transaction_types': dict(InventoryTransaction.TRANSACTION_TYPES)
+        'transaction_types': dict(InventoryTransaction.TRANSACTION_TYPES),
+        'aftersale_id': aftersale_id, 'aftersale_only': aftersale_only,
     })
 
 

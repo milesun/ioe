@@ -31,44 +31,9 @@ class ReportService:
         if not end_date:
             end_date = timezone.now()
             
-        # Truncate function based on period
-        if period == 'day':
-            trunc_func = TruncDay('created_at')
-        elif period == 'week':
-            trunc_func = TruncWeek('created_at')
-        elif period == 'month':
-            trunc_func = TruncMonth('created_at')
-        else:
-            trunc_func = TruncDay('created_at')
-            
-        # Aggregate order revenue separately from item costs: joining the item
-        # table while summing final_amount repeats revenue for every line item.
-        orders = Sale.objects.filter(status='COMPLETED', created_at__range=(start_date, end_date))
-        sales_data = list(orders.annotate(period=trunc_func).values('period').annotate(
-            total_sales=Sum('final_amount'), order_count=Count('id'),
-        ).order_by('period'))
-        item_period = {'day': TruncDay, 'week': TruncWeek, 'month': TruncMonth}.get(period, TruncDay)
-        item_data = SaleItem.objects.filter(sale__in=orders).annotate(
-            period=item_period('sale__created_at')
-        ).values('period').annotate(
-            total_cost=Sum(F('quantity') * F('product__cost')), item_count=Count('id'),
-        )
-        costs = {row['period']: row for row in item_data}
-        for row in sales_data:
-            cost = costs.get(row['period'], {})
-            row['total_cost'] = cost.get('total_cost') or Decimal('0')
-            row['item_count'] = cost.get('item_count', 0)
+        from .sales_ledger import sales_periods
+        return sales_periods(start_date, end_date, period)
 
-        # Calculate profit
-        for data in sales_data:
-            data['profit'] = data['total_sales'] - (data['total_cost'] or 0)
-            if data['total_cost'] and data['total_cost'] > 0:
-                data['profit_margin'] = (data['profit'] / data['total_cost']) * 100
-            else:
-                data['profit_margin'] = 0
-                
-        return sales_data
-    
     @staticmethod
     def get_top_selling_products(start_date=None, end_date=None, limit=10):
         """
@@ -87,25 +52,9 @@ class ReportService:
         if not end_date:
             end_date = timezone.now()
             
-        return SaleItem.objects.filter(
-            sale__created_at__range=(start_date, end_date)
-        ).values(
-            'product__id',
-            'product__name',
-            'product__barcode',
-            'product__category__name'
-        ).annotate(
-            total_quantity=Sum('quantity'),
-            total_sales=Sum('subtotal'),
-            total_cost=Sum(F('quantity') * F('product__cost'))
-        ).annotate(
-            profit=F('total_sales') - F('total_cost'),
-            profit_margin=ExpressionWrapper(
-                F('profit') * 100 / F('total_cost'),
-                output_field=DecimalField()
-            )
-        ).order_by('-total_quantity')[:limit]
-    
+        from .sales_ledger import product_totals
+        return product_totals(start_date, end_date)[:limit]
+
     @staticmethod
     def get_inventory_turnover_rate(start_date=None, end_date=None, category=None):
         """
@@ -136,22 +85,9 @@ class ReportService:
             
         inventory_data = inventory_query
         
-        # Get sales within period
-        sales_query = SaleItem.objects.filter(
-            sale__created_at__range=(start_date, end_date)
-        )
-        
-        # Apply category filter if needed
-        if category:
-            sales_query = sales_query.filter(product__category=category)
-            
-        sales_data = sales_query.values('product').annotate(
-            total_quantity=Sum('quantity')
-        )
-        
-        # Create a map for quick lookup
-        sales_map = {item['product']: item['total_quantity'] for item in sales_data}
-        
+        from .sales_ledger import product_totals
+        sales_map = {row['product__id']: row['total_quantity'] for row in product_totals(start_date, end_date)}
+
         # Calculate turnover for each product
         product_turnover = []
         for inv in inventory_data:
@@ -204,59 +140,8 @@ class ReportService:
         if not end_date:
             end_date = timezone.now()
             
-        # Sales data
-        sales_data = Sale.objects.filter(
-            created_at__range=(start_date, end_date)
-        )
-        
-        # Total sales
-        total_sales = sales_data.aggregate(
-            total_amount=Sum('total_amount'),
-            final_amount=Sum('final_amount'),
-            discount_amount=Sum('discount_amount')
-        )
-        
-        # Calculate costs
-        sale_items = SaleItem.objects.filter(sale__in=sales_data)
-        total_cost = sale_items.aggregate(
-            cost=Sum(F('quantity') * F('product__cost'))
-        )['cost'] or 0
-        
-        # Calculate profit
-        gross_profit = (total_sales['final_amount'] or 0) - total_cost
-        
-        # Calculate by category
-        category_data = sale_items.values(
-            'product__category__name'
-        ).annotate(
-            sales=Sum('subtotal'),
-            cost=Sum(F('quantity') * F('product__cost')),
-            quantity=Sum('quantity')
-        ).annotate(
-            profit=F('sales') - F('cost'),
-            profit_margin=ExpressionWrapper(
-                F('profit') * 100 / F('cost'),
-                output_field=DecimalField()
-            )
-        ).order_by('-profit')
-        
-        # Profit margin
-        profit_margin = 0
-        if total_cost > 0:
-            profit_margin = (gross_profit / total_cost) * 100
-            
-        return {
-            'start_date': start_date,
-            'end_date': end_date,
-            'total_sales': total_sales['final_amount'] or 0,
-            'total_cost': total_cost,
-            'gross_profit': gross_profit,
-            'profit_margin': profit_margin,
-            'discount_amount': total_sales['discount_amount'] or 0,
-            'order_count': sales_data.count(),
-            'item_count': sale_items.count(),
-            'category_data': list(category_data)
-        }
+        from .sales_ledger import profit_summary
+        return profit_summary(start_date, end_date)
 
     @staticmethod
     def get_member_analysis(start_date=None, end_date=None):
@@ -275,90 +160,36 @@ class ReportService:
         if not end_date:
             end_date = timezone.now().date()
             
-        # 调整日期范围，包含整天
-        start_datetime = datetime.combine(start_date, datetime.min.time())
-        end_datetime = datetime.combine(end_date, datetime.max.time())
-        
-        # 获取会员等级分布
-        level_distribution = (
-            Member.objects
-            .values('level__name')
-            .annotate(count=Count('id'))
-            .order_by('level__points_threshold')
-        )
-        
-        # 会员消费排行
-        top_members = (
-            Member.objects
-            .filter(sale__created_at__range=(start_datetime, end_datetime))
-            .annotate(
-                period_spend=Sum('sale__final_amount'),
-                period_purchase_count=Count('sale')
-            )
-            .filter(period_spend__gt=0)
-            .order_by('-period_spend')[:10]
-        )
-        
-        # 获取新增会员数据
-        new_members = (
-            Member.objects
-            .filter(created_at__range=(start_datetime, end_datetime))
-            .count()
-        )
-        
-        # 获取活跃会员数据（在指定时间段内有消费的会员）
-        active_members = (
-            Member.objects
-            .filter(sale__created_at__range=(start_datetime, end_datetime))
-            .distinct()
-            .count()
-        )
-        
-        # 会员总数
+        from .sales_ledger import order_query, return_query, period_queryset
+        orders = order_query(start_date, end_date)
+        returns = return_query(start_date, end_date)
+        member_totals = {}
+        for row in orders.values('member_id').annotate(amount=Sum('final_amount'), count=Count('id')):
+            member_totals[row['member_id']] = [row['amount'] or Decimal(0), row['count']]
+        for row in returns.values('sale__member_id').annotate(amount=Sum('refund_amount')):
+            values = member_totals.setdefault(row['sale__member_id'], [Decimal(0), 0])
+            values[0] -= row['amount'] or Decimal(0)
+        top_members = []
+        for member in Member.objects.filter(pk__in=[pk for pk in member_totals if pk is not None]):
+            member.period_spend, member.period_purchase_count = member_totals[member.pk]
+            if member.period_spend > 0:
+                top_members.append(member)
+        top_members.sort(key=lambda member: (-member.period_spend, member.pk))
+        member_sales = {'total_amount': sum((v[0] for pk, v in member_totals.items() if pk is not None), Decimal(0)),
+                        'total_count': sum(v[1] for pk, v in member_totals.items() if pk is not None)}
+        non_member = member_totals.get(None, [Decimal(0), 0])
+        non_member_sales = {'total_amount': non_member[0], 'total_count': non_member[1]}
         total_members = Member.objects.count()
-        
-        # 会员消费统计
-        member_sales = (
-            Sale.objects
-            .filter(created_at__range=(start_datetime, end_datetime))
-            .filter(member__isnull=False)
-            .aggregate(
-                total_amount=Sum('final_amount'),
-                total_count=Count('id')
-            )
-        )
-        
-        # 非会员消费统计
-        non_member_sales = (
-            Sale.objects
-            .filter(created_at__range=(start_datetime, end_datetime))
-            .filter(member__isnull=True)
-            .aggregate(
-                total_amount=Sum('final_amount'),
-                total_count=Count('id')
-            )
-        )
-        
-        # 会员平均客单价
-        member_avg_order = member_sales['total_amount'] / member_sales['total_count'] if member_sales['total_count'] else 0
-        
-        # 非会员平均客单价
-        non_member_avg_order = non_member_sales['total_amount'] / non_member_sales['total_count'] if non_member_sales['total_count'] else 0
-        
-        # 计算会员活跃率
-        activity_rate = (active_members / total_members * 100) if total_members > 0 else 0
-        
+        active_members = orders.filter(member__isnull=False).values('member_id').distinct().count()
         return {
-            'level_distribution': level_distribution,
-            'top_members': top_members,
-            'new_members': new_members,
-            'active_members': active_members,
-            'total_members': total_members,
-            'activity_rate': activity_rate,
-            'member_sales': member_sales,
-            'non_member_sales': non_member_sales,
-            'member_avg_order': member_avg_order,
-            'non_member_avg_order': non_member_avg_order,
+            'level_distribution': Member.objects.values('level__name').annotate(count=Count('id')).order_by('level__points_threshold'),
+            'top_members': top_members[:10],
+            'new_members': period_queryset(Member.objects.all(), 'created_at', start_date, end_date).count(),
+            'active_members': active_members, 'total_members': total_members,
+            'activity_rate': active_members / total_members * 100 if total_members else 0,
+            'member_sales': member_sales, 'non_member_sales': non_member_sales,
+            'member_avg_order': member_sales['total_amount'] / member_sales['total_count'] if member_sales['total_count'] else 0,
+            'non_member_avg_order': non_member_sales['total_amount'] / non_member_sales['total_count'] if non_member_sales['total_count'] else 0,
         }
 
     @staticmethod

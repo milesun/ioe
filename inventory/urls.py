@@ -35,9 +35,13 @@ from .views import core as core_views
 from .views import sales as sales_views
 from .views import product as product_views
 from .views import inventory as inventory_views
+from .views import aftersales as aftersales_views
 from .views import system as system_views  # 导入重构后的系统视图模块
 
 urlpatterns = [
+    path('aftersales/', aftersales_views.aftersale_list, name='aftersale_list'),
+    path('aftersales/<int:pk>/', aftersales_views.aftersale_detail, name='aftersale_detail'),
+    path('sales/<int:sale_id>/aftersales/create/', aftersales_views.aftersale_create, name='aftersale_create'),
     path('admin/', admin.site.urls),
     path('i18n/', include('django.conf.urls.i18n')),
     path('', core_views.index, name='index'),

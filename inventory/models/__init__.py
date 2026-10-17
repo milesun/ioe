@@ -17,6 +17,7 @@ from .member import Member, MemberLevel, RechargeRecord, MemberTransaction
 
 # 销售相关模型
 from .sales import Sale, SaleItem
+from .aftersales import AfterSale, AfterSaleItem
 
 # 通用模型
 from .common import OperationLog, SystemConfig
@@ -38,6 +39,7 @@ __all__ = [
     
     # 销售模型
     'Sale', 'SaleItem',
+    'AfterSale', 'AfterSaleItem',
     
     # 通用模型
     'OperationLog', 'SystemConfig',

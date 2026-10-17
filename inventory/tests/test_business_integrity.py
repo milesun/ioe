@@ -122,6 +122,7 @@ class LogDownloadIntegrityTests(TransactionTestCase):
         path.write_text('test log')
         self.addCleanup(path.unlink, missing_ok=True)
         response = self.client.get(reverse('download_log_file', args=[path.name]))
+        self.addCleanup(response.close)
         self.assertEqual(response.status_code, 200, 'Invalid content-type audit FK prevents log download')
 
 class PaymentAndInventoryEdgeTests(TestCase):

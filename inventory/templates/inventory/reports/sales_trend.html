@@ -85,6 +85,8 @@
                                 <tr>
                                     <th>{% translate "日期" %}</th>
                                     <th class="text-end">{% translate "销售额" %}</th>
+                                    <th class="text-end">退回金额</th>
+                                    <th class="text-end">{% translate "净销售额" %}</th>
                                     <th class="text-end">{% translate "成本" %}</th>
                                     <th class="text-end">{% translate "利润" %}</th>
                                     <th class="text-end">{% translate "毛利率" %}</th>
@@ -96,6 +98,8 @@
                                 {% for data in sales_data %}
                                 <tr>
                                     <td>{{ data.period|date:"Y-m-d" }}</td>
+                                    <td class="text-end">¥{{ data.gross_sales|floatformat:2 }}</td>
+                                    <td class="text-end">¥{{ data.refund_amount|floatformat:2 }}</td>
                                     <td class="text-end">¥{{ data.total_sales|floatformat:2 }}</td>
                                     <td class="text-end">¥{{ data.total_cost|floatformat:2 }}</td>
                                     <td class="text-end">¥{{ data.profit|floatformat:2 }}</td>
@@ -105,7 +109,7 @@
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="7" class="text-center py-4">{% translate "没有销售数据" %}</td>
+                                    <td colspan="9" class="text-center py-4">{% translate "没有销售数据" %}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -154,7 +158,7 @@
                 labels: labels,
                 datasets: [
                     {
-                        label: '{% translate "销售额" %}',
+                        label: '{% translate "净销售额" %}',
                         data: salesData,
                         backgroundColor: 'rgba(54, 162, 235, 0.5)',
                         borderColor: 'rgba(54, 162, 235, 1)',

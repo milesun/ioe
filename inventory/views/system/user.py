@@ -80,6 +80,7 @@ def user_create(request):
         content_types = ContentType.objects.filter(
             Q(app_label='inventory', model='sale') |
             Q(app_label='inventory', model='saleitem') |
+            Q(app_label='inventory', model='aftersale') |
             Q(app_label='inventory', model='member')
         )
         permissions = Permission.objects.filter(content_type__in=content_types)

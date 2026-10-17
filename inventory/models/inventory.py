@@ -58,6 +58,10 @@ class InventoryTransaction(models.Model):
     quantity = models.IntegerField(verbose_name='数量')
     operator = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name='操作员')
     notes = models.TextField(blank=True, verbose_name='备注')
+    aftersale = models.ForeignKey(
+        'AfterSale', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='inventory_transactions', verbose_name='售后单',
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     
     class Meta:
@@ -77,7 +81,7 @@ def check_inventory(product, quantity):
         return False
 
 
-def update_inventory(product, quantity, transaction_type, operator, notes=''):
+def update_inventory(product, quantity, transaction_type, operator, notes='', *, aftersale=None):
     """更新库存并记录交易"""
     try:
         with transaction.atomic():
@@ -106,7 +110,8 @@ def update_inventory(product, quantity, transaction_type, operator, notes=''):
                 transaction_type=transaction_type,
                 quantity=abs(quantity),
                 operator=operator,
-                notes=notes
+                notes=notes,
+                aftersale=aftersale,
             )
         return True, inventory, record
     except Exception as e:

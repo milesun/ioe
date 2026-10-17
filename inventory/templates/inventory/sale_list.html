@@ -3,6 +3,7 @@
 {% block title %}{% if request.LANGUAGE_CODE == 'en' %}Sales{% else %}销售管理{% endif %} - {{ block.super }}{% endblock %}
 
 {% block content %}
+{% include 'inventory/aftersales/summary.html' %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="card page-header-card">
@@ -13,6 +14,7 @@
                         <p class="text-muted mb-md-0">{% if request.LANGUAGE_CODE == 'en' %}Manage all sales transactions{% else %}管理所有销售交易信息{% endif %}</p>
                     </div>
                     <div class="d-flex flex-wrap gap-2">
+                        {% if perms.inventory.view_aftersale %}<a href="{% url 'aftersale_list' %}" class="btn btn-outline-primary">退换货记录</a>{% endif %}
                         <a href="{% url 'sale_create' %}" class="btn btn-primary">
                             <i class="bi bi-cart-plus me-1"></i> {% if request.LANGUAGE_CODE == 'en' %}New Sale{% else %}新增销售{% endif %}
                         </a>
@@ -99,7 +101,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <span class="badge bg-success">{% if request.LANGUAGE_CODE == 'en' %}Completed{% else %}已完成{% endif %}</span>
+                                    <span class="badge bg-success">{{ sale.get_status_display }}</span><br><small>{{ sale.aftersales_label }}{% if sale.exchange_source %} · 换货新单{% endif %}</small>
                                 </td>
                                 <td>
                                     <div class="btn-group">
@@ -134,7 +136,7 @@
                         <div class="card border-0 bg-gradient-light h-100 shadow-sm">
                             <div class="card-body p-4">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h6 class="card-subtitle text-muted">{% if request.LANGUAGE_CODE == 'en' %}Today Sales{% else %}今日销售额{% endif %}</h6>
+                                    <h6 class="card-subtitle text-muted">{% if request.LANGUAGE_CODE == 'en' %}Today Sales{% else %}今日净销售额{% endif %}</h6>
                                     <div class="stat-icon bg-success-subtle rounded-circle p-2">
                                         <i class="bi bi-currency-yen text-success fs-4"></i>
                                     </div>
@@ -150,7 +152,7 @@
                         <div class="card border-0 bg-gradient-light h-100 shadow-sm">
                             <div class="card-body p-4">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h6 class="card-subtitle text-muted">{% if request.LANGUAGE_CODE == 'en' %}Monthly Sales{% else %}本月销售额{% endif %}</h6>
+                                    <h6 class="card-subtitle text-muted">{% if request.LANGUAGE_CODE == 'en' %}Monthly Sales{% else %}本月净销售额{% endif %}</h6>
                                     <div class="stat-icon bg-primary-subtle rounded-circle p-2">
                                         <i class="bi bi-bar-chart-line text-primary fs-4"></i>
                                     </div>

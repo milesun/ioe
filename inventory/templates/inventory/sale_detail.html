@@ -13,6 +13,8 @@
                         <p class="text-muted mb-md-0">查看销售单的详细信息</p>
                     </div>
                     <div class="d-flex flex-wrap gap-2">
+                        {% if sale.status == 'COMPLETED' and perms.inventory.add_aftersale %}<a href="{% url 'aftersale_create' sale.id %}" class="btn btn-primary">办理退换货</a>{% endif %}
+                        {% if perms.inventory.view_aftersale %}<a href="{% url 'aftersale_list' %}" class="btn btn-outline-primary">退换货记录</a>{% endif %}
                         <a href="{% url 'sale_list' %}" class="btn btn-secondary">
                             <i class="bi bi-arrow-left me-1"></i> 返回列表
                         </a>
@@ -59,7 +61,7 @@
                     </li>
                     <li class="list-group-item d-flex justify-content-between">
                         <span class="text-muted">状态:</span>
-                        <span class="badge bg-success">已完成</span>
+                        <span class="badge bg-success">{{ sale.get_status_display }} · {{ sale.aftersales_label }}</span>
                     </li>
                 </ul>
             </div>
@@ -91,6 +93,7 @@
                     <li class="list-group-item d-flex justify-content-between">
                         <span class="text-muted">支付方式:</span>
                         <span>
+                            {% if sale.exchange_credit_amount %}<span>换货抵扣 ¥{{ sale.exchange_credit_amount }}；</span>{% endif %}
                             {% if sale.payment_method == 'cash' %}
                             <span class="badge bg-success">现金支付</span>
                             {% elif sale.payment_method == 'wechat' %}
@@ -100,7 +103,7 @@
                             {% elif sale.payment_method == 'card' %}
                             <span class="badge bg-success">刷卡</span>
                             {% else %}
-                            <span class="badge bg-secondary">其他</span>
+                            <span class="badge bg-secondary">{{ sale.get_payment_method_display }}（余额来源 ¥{{ sale.balance_paid }}）</span>
                             {% endif %}
                         </span>
                     </li>
@@ -132,7 +135,7 @@
                     </li>
                     <li class="list-group-item d-flex justify-content-between">
                         <span class="text-muted">积分增加:</span>
-                        <span>+{{ sale.final_amount|floatformat:0 }}</span>
+                        <span>+{{ sale.points_earned }}</span>
                     </li>
                     <li class="list-group-item d-flex justify-content-between">
                         <a href="{% url 'member_detail' pk=sale.member.id %}" class="btn btn-sm btn-outline-info mt-2">
@@ -152,6 +155,7 @@
 </div>
 
 <!-- 商品明细 -->
+{% include 'inventory/aftersales/sale_history.html' %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="card shadow-sm">
@@ -199,7 +203,7 @@
                                     ¥{{ item.actual_price|floatformat:2 }}
                                     {% endif %}
                                 </td>
-                                <td>{{ item.quantity }}</td>
+                                <td>{{ item.quantity }}<br><small class="text-muted">已退 {{ item.returned_quantity }} / 可退 {{ item.returnable_quantity }}</small></td>
                                 <td class="fw-bold">¥{{ item.subtotal|floatformat:2 }}</td>
                             </tr>
                             {% empty %}

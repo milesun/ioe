@@ -1,0 +1,72 @@
+{% extends 'inventory/base.html' %}
+{% block title %}办理退换货 - {{ block.super }}{% endblock %}
+{% block content %}
+<div class="card mb-4"><div class="card-body">
+  <h2>办理退换货</h2><p>原销售单 <a href="{% url 'sale_detail' sale.id %}">#{{ sale.id }}</a> · 原实付 ¥{{ sale.final_amount }}</p>
+  <p class="text-muted">仅受理可再次销售的商品，所有退回商品都会恢复库存。退款按原折后实付计算；换出商品按当前售价和会员折扣计算。</p>
+</div></div>
+<form method="post" class="card mb-4"><div class="card-body">
+  {% csrf_token %}{{ form.non_field_errors }}
+  <div class="row g-3"><div class="col-md-4">{{ form.kind.label_tag }}{{ form.kind }}{{ form.kind.errors }}</div><div class="col-md-4">{{ form.offline_method.label_tag }}{{ form.offline_method }}{{ form.offline_method.errors }}</div><div class="col-md-4">{{ form.topup_method.label_tag }}{{ form.topup_method }}{{ form.topup_method.errors }}</div></div>
+  <h3 class="h5 mt-4">退回商品</h3>
+  <div class="row g-3">{% for field in form.quantity_fields %}<div class="col-md-6">{{ field.label_tag }}{{ field }}{{ field.errors }}</div>{% endfor %}</div>
+  <h3 class="h5 mt-4">换出商品</h3><p class="text-muted">退货时留空。换货时选择商品和数量，同一商品请合并填写。</p>
+  {{ formset.management_form }}{{ formset.non_form_errors }}
+  <div id="replacement-rows">{% for row in formset %}<div class="row g-3 mb-3"><div class="col-md-9">{{ row.product.label_tag }}{{ row.product }}{{ row.product.errors }}</div><div class="col-md-3">{{ row.quantity.label_tag }}{{ row.quantity }}{{ row.quantity.errors }}</div>{{ row.non_field_errors }}</div>{% endfor %}</div>
+  <button type="button" id="add-replacement" class="btn btn-outline-secondary mb-3">增加换出商品</button>
+  <div>{{ form.reason.label_tag }}{{ form.reason }}{{ form.reason.errors }}</div>
+  {% if form.errors or formset.total_error_count %}
+  <div id="aftersale-preview-errors" class="alert alert-danger mt-3" role="alert" tabindex="-1" style="scroll-margin-top: 80px">
+    <strong>暂时无法生成预览，请修改以下内容：</strong>
+    <ul class="mb-0">
+      {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+      {% for field in form %}{% for error in field.errors %}<li>{{ field.label }}：{{ error }}</li>{% endfor %}{% endfor %}
+      {% for error in formset.non_form_errors %}<li>{{ error }}</li>{% endfor %}
+      {% for row in formset %}{% for error in row.non_field_errors %}<li>换出商品第 {{ forloop.parentloop.counter }} 行：{{ error }}</li>{% endfor %}{% for field in row %}{% for error in field.errors %}<li>换出商品 · {{ field.label }}：{{ error }}</li>{% endfor %}{% endfor %}{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <button type="submit" class="btn btn-primary mt-3">预览收退款</button>
+  <a href="{% url 'sale_detail' sale.id %}" class="btn btn-outline-secondary mt-3">返回原订单</a>
+</div></form>
+{% if preview %}
+<div id="aftersale-preview" class="card mb-4 border-primary" tabindex="-1" style="scroll-margin-top: 80px"><div class="card-body">
+  <h3 class="h5">确认本次退换货</h3>
+  <table class="table"><thead><tr><th>退回商品</th><th>数量</th><th>退款价值</th></tr></thead><tbody>{% for row in preview.return_lines %}<tr><td>{{ row.product_name }} · {{ row.specification }}</td><td>{{ row.quantity }}</td><td>¥{{ row.refund_amount }}</td></tr>{% endfor %}</tbody></table>
+  {% if preview.replacement_lines %}<table class="table"><thead><tr><th>换出商品</th><th>数量</th><th>折扣前金额</th></tr></thead><tbody>{% for row in preview.replacement_lines %}<tr><td>{{ row.product_name }} · {{ row.specification }}</td><td>{{ row.quantity }}</td><td>¥{{ row.subtotal }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  <dl class="row"><dt class="col-sm-6">退回价值</dt><dd class="col-sm-6">¥{{ preview.refund_amount }}</dd><dt class="col-sm-6">换出商品应付（折后）</dt><dd class="col-sm-6">¥{{ preview.replacement_amount }}</dd><dt class="col-sm-6">抵扣新单</dt><dd class="col-sm-6">¥{{ preview.credit_amount }}</dd><dt class="col-sm-6">会员余额变化（正数退回，负数扣款）</dt><dd class="col-sm-6">¥{{ preview.balance_delta }}</dd><dt class="col-sm-6">线下实际收退款（正数收款，负数退款）</dt><dd class="col-sm-6 fs-5">¥{{ preview.offline_delta }}</dd><dt class="col-sm-6">扣回原订单积分 / 新单赠送积分</dt><dd class="col-sm-6">{{ preview.points_returned }} / {{ preview.new_points }}</dd></dl>
+  <p class="text-muted">积分不足时可扣为负数。系统不会自动执行现金、微信、支付宝或银行卡退款。上方表单如有修改，请重新预览。</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="confirmation" value="{{ confirmation }}"><label class="form-check mb-3"><input class="form-check-input" type="checkbox" name="acknowledged" required><span class="form-check-label">已确认商品可再次销售，并已按上述金额和所选渠道完成线下收退款（金额为零时无需收退款）。</span></label><button class="btn btn-success" type="submit">确认完成退换货</button></form>
+</div></div>
+{% endif %}
+<template id="replacement-template"><div class="row g-3 mb-3"><div class="col-md-9">{{ formset.empty_form.product.label_tag }}{{ formset.empty_form.product }}</div><div class="col-md-3">{{ formset.empty_form.quantity.label_tag }}{{ formset.empty_form.quantity }}</div></div></template>
+{% endblock %}
+{% block extra_js %}<script>
+document.getElementById('replacement-rows').addEventListener('change', function (event) {
+  if (!event.target.matches('select[name$="-product"]')) return;
+  const product = event.target;
+  const quantity = product.closest('.row').querySelector('input[name$="-quantity"]');
+  if (!product.value) quantity.value = '';
+  else {
+    if (quantity.value === '') quantity.value = '1';
+    const kind = product.form.elements.namedItem('kind');
+    if (kind.value !== 'EXCHANGE') {
+      kind.value = 'EXCHANGE';
+      kind.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+  }
+});
+document.getElementById('add-replacement').addEventListener('click', function () {
+  const count = document.getElementById('id_replacement-TOTAL_FORMS');
+  if (Number(count.value) >= 50) return;
+  document.getElementById('replacement-rows').insertAdjacentHTML('beforeend', document.getElementById('replacement-template').innerHTML.replaceAll('__prefix__', count.value));
+  count.value = Number(count.value) + 1;
+});
+const previewFeedback = document.getElementById('aftersale-preview') || document.getElementById('aftersale-preview-errors');
+if (previewFeedback) {
+  requestAnimationFrame(() => {
+    previewFeedback.focus({preventScroll: true});
+    previewFeedback.scrollIntoView({block: 'start'});
+  });
+}
+</script>{% endblock %}

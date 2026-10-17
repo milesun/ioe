@@ -2,6 +2,7 @@
 {% load static custom_filters %}
 {% block title %}{% if request.LANGUAGE_CODE == 'en' %}Overview{% else %}经营概览{% endif %} - {{ block.super }}{% endblock %}
 {% block content %}
+{% include 'inventory/aftersales/summary.html' %}
 <div class="page-heading">
     <h1 class="page-title visually-hidden mb-0">{% if request.LANGUAGE_CODE == 'en' %}Overview{% else %}经营概览{% endif %}</h1>
     <div class="heading-actions">
@@ -12,7 +13,7 @@
     </div>
 </div>
 <div class="stats-grid">
-    <a class="card stat-card" href="{% url 'sale_list' %}"><div class="stat-top"><span>{% if request.LANGUAGE_CODE == 'en' %}Today Sales{% else %}今日销售额{% endif %}</span><i class="bi bi-currency-yen" aria-hidden="true"></i></div><strong class="stat-value"><small>¥</small>{{ today_sales_amount|floatformat:2 }}</strong><div class="stat-meta">{% if request.LANGUAGE_CODE == 'en' %}Orders today{% else %}今日订单{% endif %}<strong>{{ today_sales }}</strong>{% if request.LANGUAGE_CODE == 'en' %}orders{% else %}笔{% endif %}</div></a>
+    <a class="card stat-card" href="{% url 'sale_list' %}"><div class="stat-top"><span>{% if request.LANGUAGE_CODE == 'en' %}Today Sales{% else %}今日净销售额{% endif %}</span><i class="bi bi-currency-yen" aria-hidden="true"></i></div><strong class="stat-value"><small>¥</small>{{ today_sales_amount|floatformat:2 }}</strong><div class="stat-meta">{% if request.LANGUAGE_CODE == 'en' %}Orders today{% else %}今日订单{% endif %}<strong>{{ today_sales }}</strong>{% if request.LANGUAGE_CODE == 'en' %}orders{% else %}笔{% endif %}</div></a>
     <a class="card stat-card" href="{% url 'product_list' %}"><div class="stat-top"><span>{% if request.LANGUAGE_CODE == 'en' %}Products{% else %}商品总数{% endif %}</span><i class="bi bi-box-seam" aria-hidden="true"></i></div><strong class="stat-value">{{ total_products }}</strong><div class="stat-meta"><strong>{{ low_stock_products }}</strong>{% if request.LANGUAGE_CODE == 'en' %}low in stock{% else %}种库存偏低{% endif %}</div></a>
     <a class="card stat-card" href="{% url 'member_list' %}"><div class="stat-top"><span>{% if request.LANGUAGE_CODE == 'en' %}Members{% else %}会员总数{% endif %}</span><i class="bi bi-people" aria-hidden="true"></i></div><strong class="stat-value">{{ total_members }}</strong><div class="stat-meta">{% if request.LANGUAGE_CODE == 'en' %}New this month{% else %}本月新增{% endif %}<strong>{{ new_members_month }}</strong></div></a>
     <a class="card stat-card" href="{% url 'sale_list' %}"><div class="stat-top"><span>{% if request.LANGUAGE_CODE == 'en' %}Total orders{% else %}累计订单{% endif %}</span><i class="bi bi-receipt" aria-hidden="true"></i></div><strong class="stat-value">{{ total_sales }}</strong><div class="stat-meta">{% if request.LANGUAGE_CODE == 'en' %}Yesterday{% else %}昨日订单{% endif %}<strong>{{ yesterday_sales }}</strong>{% if request.LANGUAGE_CODE == 'en' %}orders{% else %}笔{% endif %}</div></a>

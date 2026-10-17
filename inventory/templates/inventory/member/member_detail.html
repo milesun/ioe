@@ -4,6 +4,7 @@
 {% block title %}会员详情 - {{ member.name }}{% endblock %}
 
 {% block content %}
+{% include 'inventory/aftersales/member_history.html' %}
 <div class="container py-4">
     <div class="row">
         <div class="col-12">
@@ -107,7 +108,7 @@
                                             -
                                         {% endif %}
                                     </td>
-                                    <td>{{ transaction.description }}</td>
+                                    <td>{{ transaction.description }}{% if transaction.related_object_type == 'AfterSale' and perms.inventory.view_aftersale %} <a href="{% url 'aftersale_detail' transaction.related_object_id %}">售后详情</a>{% endif %}</td>
                                     <td>{{ transaction.created_by.username }}</td>
                                 </tr>
                                 {% empty %}
@@ -143,7 +144,7 @@
                             <tbody>
                                 {% for sale in sales %}
                                 <tr>
-                                    <td>{{ sale.sale_number }}</td>
+                                    <td>#{{ sale.id }}</td>
                                     <td>{{ sale.created_at|date:"Y-m-d H:i" }}</td>
                                     <td>{{ sale.items.count }}</td>
                                     <td>{{ sale.total_amount|floatformat:2 }}</td>

@@ -35,6 +35,9 @@ media/
 # 静态文件收集目录
 staticfiles/
 
+# 本地临时文件和测试产物
+/temp/
+
 # 环境变量和敏感信息
 .env
 .env.local

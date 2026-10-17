@@ -37,13 +37,12 @@ def _normalize_payment_method(payment_method):
 @login_required
 def sale_list(request):
     """销售单列表视图"""
-    today = timezone.now().date()
-    today_sales = Sale.objects.filter(created_at__date=today).aggregate(
-        total=Sum('total_amount')
-    )['total'] or 0
-    month_sales = Sale.objects.filter(created_at__month=today.month).aggregate(
-        total=Sum('total_amount')
-    )['total'] or 0
+    from inventory.services.sales_ledger import sales_summary
+    today = timezone.localdate()
+    today_summary = sales_summary(today, today)
+    month_summary = sales_summary(today.replace(day=1), today)
+    today_sales = today_summary['total_sales']
+    month_sales = month_summary['total_sales']
 
     search_query = request.GET.get('q', '')
     date_from = request.GET.get('date_from', '')
@@ -78,6 +77,7 @@ def sale_list(request):
         'date_from': date_from,
         'date_to': date_to,
         'today_sales': today_sales,
+        'sales_summary': today_summary,
         'month_sales': month_sales,
         'total_sales': total_sales
     }
@@ -88,11 +88,13 @@ def sale_list(request):
 def sale_detail(request, sale_id):
     """销售单详情视图"""
     sale = get_object_or_404(Sale, pk=sale_id)
-    items = SaleItem.objects.filter(sale=sale).select_related('product')
+    from inventory.services.aftersales_service import return_rows
+    items = return_rows(sale)
 
     context = {
         'sale': sale,
         'items': items,
+        'aftersales': sale.aftersales.select_related('operator', 'replacement_sale'),
     }
     
     return render(request, 'inventory/sale_detail.html', context)

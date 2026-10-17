@@ -37,10 +37,20 @@ class Sale(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name='操作员')
     remark = models.TextField(blank=True, verbose_name='备注')
+    aftersales_version = models.PositiveIntegerField(default=0, editable=False)
+    exchange_credit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     @property
     def total_quantity(self):
         return sum(item.quantity for item in self.items.all())
+
+    @property
+    def aftersales_label(self):
+        from django.db.models import Sum
+        returned = self.aftersales.aggregate(quantity=Sum('items__quantity'))['quantity'] or 0
+        if not returned:
+            return '无售后'
+        return '全部退回' if returned >= self.total_quantity else '部分退回'
 
     def update_total_amount(self):
         self.total_amount = sum(item.subtotal for item in self.items.all())
@@ -107,6 +117,7 @@ class SaleItem(models.Model):
                     product=self.product, quantity=-delta,
                     transaction_type='OUT' if delta > 0 else 'IN',
                     operator=sale.operator, notes=f'销售单 #{sale.id}',
+                    aftersale=getattr(sale, 'exchange_source', None),
                 )
                 if not success:
                     raise ValidationError(error or '库存更新失败')
