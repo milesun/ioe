@@ -31,6 +31,9 @@ def inventory_list(request):
     color = request.GET.get('color', '')
     size = request.GET.get('size', '')
     search_query = request.GET.get('search', '')
+    stock_status = request.GET.get('stock_status', 'all')
+    if stock_status not in ('all', 'low', 'normal'):
+        stock_status = 'all'
     
     inventory_items = Inventory.objects.select_related('product', 'product__category').filter(product__is_active=True)
     
@@ -48,6 +51,21 @@ def inventory_list(request):
             Q(product__name__icontains=search_query) | 
             Q(product__barcode__icontains=search_query)
         )
+
+    if stock_status == 'low':
+        inventory_items = inventory_items.filter(quantity__lte=F('warning_level'))
+    elif stock_status == 'normal':
+        inventory_items = inventory_items.filter(quantity__gt=F('warning_level'))
+
+    # 先筛选再分页，并明确排序，保证固定数据下的翻页顺序稳定。
+    paginator = Paginator(inventory_items.order_by('pk'), 20)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    filter_params = request.GET.copy()
+    filter_params.pop('page', None)
+    filter_params.pop('stock_status', None)
+    stock_filter_query = filter_params.urlencode()
+    filter_params['stock_status'] = stock_status
     
     categories = Category.objects.all()
     
@@ -55,7 +73,14 @@ def inventory_list(request):
     sizes = Product.SIZE_CHOICES
     
     context = {
-        'inventory_items': inventory_items,
+        'inventory_items': page_obj,
+        'page_obj': page_obj,
+        'page_range': paginator.get_elided_page_range(
+            page_obj.number, on_each_side=2, on_ends=1,
+        ),
+        'pagination_query': filter_params.urlencode(),
+        'stock_filter_query': stock_filter_query,
+        'stock_status': stock_status,
         'categories': categories,
         'colors': colors,
         'sizes': sizes,

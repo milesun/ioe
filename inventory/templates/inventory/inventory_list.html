@@ -32,6 +32,7 @@
             <div class="card-body">
                 <!-- 搜索和筛选表单 -->
                 <form method="get" action="{% url 'inventory_list' %}" id="filterForm" class="mb-4">
+                    <input type="hidden" name="stock_status" value="{{ stock_status }}">
                     <div class="row g-3">
                         <div class="col-md-4">
                             <div class="input-group">
@@ -69,7 +70,7 @@
                                 </select>
                                 
                                 <button type="submit" class="btn btn-primary">{% if request.LANGUAGE_CODE == 'en' %}Filter{% else %}筛选{% endif %}</button>
-                                {% if selected_category or selected_color or selected_size or search_query %}
+                                {% if selected_category or selected_color or selected_size or search_query or stock_status != 'all' %}
                                 <a href="{% url 'inventory_list' %}" class="btn btn-outline-secondary">
                                     <i class="bi bi-x-circle me-1"></i>{% if request.LANGUAGE_CODE == 'en' %}Clear Filters{% else %}清除筛选{% endif %}
                                 </a>
@@ -82,9 +83,9 @@
                 <!-- 库存状态过滤 -->
                 <div class="d-flex mb-4">
                     <div class="btn-group" id="stockFilter">
-                        <button type="button" class="btn btn-outline-secondary active" data-filter="all">{% if request.LANGUAGE_CODE == 'en' %}All{% else %}全部{% endif %}</button>
-                        <button type="button" class="btn btn-outline-danger" data-filter="low">{% if request.LANGUAGE_CODE == 'en' %}Low Stock{% else %}库存预警{% endif %}</button>
-                        <button type="button" class="btn btn-outline-success" data-filter="normal">{% if request.LANGUAGE_CODE == 'en' %}Normal{% else %}库存正常{% endif %}</button>
+                        <a href="?stock_status=all{% if stock_filter_query %}&amp;{{ stock_filter_query }}{% endif %}" class="btn btn-outline-secondary{% if stock_status == 'all' %} active{% endif %}"{% if stock_status == 'all' %} aria-current="true"{% endif %}>{% if request.LANGUAGE_CODE == 'en' %}All{% else %}全部{% endif %}</a>
+                        <a href="?stock_status=low{% if stock_filter_query %}&amp;{{ stock_filter_query }}{% endif %}" class="btn btn-outline-danger{% if stock_status == 'low' %} active{% endif %}"{% if stock_status == 'low' %} aria-current="true"{% endif %}>{% if request.LANGUAGE_CODE == 'en' %}Low Stock{% else %}库存预警{% endif %}</a>
+                        <a href="?stock_status=normal{% if stock_filter_query %}&amp;{{ stock_filter_query }}{% endif %}" class="btn btn-outline-success{% if stock_status == 'normal' %} active{% endif %}"{% if stock_status == 'normal' %} aria-current="true"{% endif %}>{% if request.LANGUAGE_CODE == 'en' %}Normal{% else %}库存正常{% endif %}</a>
                     </div>
                 </div>
                 
@@ -167,7 +168,7 @@
                                         <i class="bi bi-clipboard-x text-muted" style="font-size: 2.5rem;"></i>
                                         <p class="mt-3 mb-1">{% if request.LANGUAGE_CODE == 'en' %}No inventory data yet{% else %}暂无库存数据{% endif %}</p>
                                         <small class="text-muted">
-                                            {% if search_query or selected_category or selected_color or selected_size %}
+                                            {% if search_query or selected_category or selected_color or selected_size or stock_status != 'all' %}
                                             {% if request.LANGUAGE_CODE == 'en' %}No inventory matches the current filters{% else %}没有找到符合筛选条件的库存，请尝试调整筛选条件{% endif %}
                                             {% else %}
                                             {% if request.LANGUAGE_CODE == 'en' %}Click Stock In to add inventory{% else %}点击"入库"按钮添加库存{% endif %}
@@ -183,25 +184,49 @@
                 
                 <!-- 分页控件 -->
                 {% if inventory_items %}
-                <div class="d-flex justify-content-between align-items-center mt-4">
+                <div class="d-flex flex-column flex-sm-row flex-wrap justify-content-between align-items-start align-items-sm-center gap-3 mt-4">
                     <div class="text-muted small">
-                        {% if request.LANGUAGE_CODE == 'en' %}Showing 1 to {{ inventory_items|length }} of {{ inventory_items|length }} records{% else %}显示 1 至 {{ inventory_items|length }} 条，共 {{ inventory_items|length }} 条记录{% endif %}
+                        {% if request.LANGUAGE_CODE == 'en' %}Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} records{% else %}显示 {{ page_obj.start_index }} 至 {{ page_obj.end_index }} 条，共 {{ page_obj.paginator.count }} 条记录{% endif %}
                     </div>
-                    <nav aria-label="Page navigation">
-                        <ul class="pagination pagination-sm mb-0">
-                            <li class="page-item disabled">
-                                <a class="page-link" href="#" aria-label="Previous">
+                    {% if page_obj.has_other_pages %}
+                    <nav class="flex-shrink-0 mw-100" aria-label="{% if request.LANGUAGE_CODE == 'en' %}Inventory pagination{% else %}库存列表分页{% endif %}">
+                        <ul class="pagination pagination-sm flex-row flex-wrap mb-0">
+                            {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}&amp;{{ pagination_query }}" aria-label="{% if request.LANGUAGE_CODE == 'en' %}Previous{% else %}上一页{% endif %}">
                                     <span aria-hidden="true">&laquo;</span>
                                 </a>
                             </li>
-                            <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                            {% else %}
                             <li class="page-item disabled">
-                                <a class="page-link" href="#" aria-label="Next">
+                                <span class="page-link" aria-disabled="true" aria-label="{% if request.LANGUAGE_CODE == 'en' %}Previous{% else %}上一页{% endif %}">&laquo;</span>
+                            </li>
+                            {% endif %}
+                            {% for page_number in page_range %}
+                            {% if page_number == page_obj.paginator.ELLIPSIS %}
+                            <li class="page-item disabled">
+                                <span class="page-link">{{ page_number }}</span>
+                            </li>
+                            {% elif page_number == page_obj.number %}
+                            <li class="page-item active"><span class="page-link" aria-current="page">{{ page_number }}</span></li>
+                            {% else %}
+                            <li class="page-item"><a class="page-link" href="?page={{ page_number }}&amp;{{ pagination_query }}">{{ page_number }}</a></li>
+                            {% endif %}
+                            {% endfor %}
+                            {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}&amp;{{ pagination_query }}" aria-label="{% if request.LANGUAGE_CODE == 'en' %}Next{% else %}下一页{% endif %}">
                                     <span aria-hidden="true">&raquo;</span>
                                 </a>
                             </li>
+                            {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link" aria-disabled="true" aria-label="{% if request.LANGUAGE_CODE == 'en' %}Next{% else %}下一页{% endif %}">&raquo;</span>
+                            </li>
+                            {% endif %}
                         </ul>
                     </nav>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -209,34 +234,4 @@
     </div>
 </div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // 库存状态筛选
-        const stockFilterButtons = document.querySelectorAll('#stockFilter button');
-        stockFilterButtons.forEach(function(button) {
-            button.addEventListener('click', function() {
-                // 移除所有按钮的active类
-                stockFilterButtons.forEach(btn => btn.classList.remove('active'));
-                // 添加当前按钮的active类
-                this.classList.add('active');
-                
-                const filterType = this.dataset.filter;
-                const rows = document.querySelectorAll('tbody tr');
-                
-                rows.forEach(function(row) {
-                    // 忽略空行
-                    if (!row.querySelector('td:first-child')) return;
-                    
-                    const stockStatus = row.dataset.stockStatus;
-                    
-                    if (filterType === 'all' || stockStatus === filterType) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            });
-        });
-    });
-</script>
 {% endblock %}
