@@ -8,6 +8,12 @@ from inventory.services.aftersales_service import return_rows
 OFFLINE_CHOICES = [('cash', '现金'), ('wechat', '微信'), ('alipay', '支付宝'), ('card', '银行卡'), ('other', '其他')]
 
 
+def product_label(product):
+    color = product.get_color_display() or '无颜色'
+    size = product.get_size_display() or '无尺码'
+    return f'{product.name}｜{color}｜{size}'
+
+
 class AfterSaleForm(forms.Form):
     kind = forms.ChoiceField(label='售后类型', choices=AfterSale.TYPES)
     reason = forms.CharField(label='原因', max_length=2000, widget=forms.Textarea(attrs={'rows': 2}))
@@ -20,7 +26,7 @@ class AfterSaleForm(forms.Form):
         self.return_items = return_rows(sale)
         for item in self.return_items:
             self.fields[f'return_{item.pk}'] = forms.IntegerField(
-                label=f'{item.product.name}（已退 {item.returned_quantity}，可退 {item.returnable_quantity}）',
+                label=f'{product_label(item.product)}（已退 {item.returned_quantity}，可退 {item.returnable_quantity}）',
                 required=False, min_value=0, max_value=max(item.returnable_quantity, 0), initial=0,
             )
         for field in self.fields.values():
@@ -55,9 +61,7 @@ class ReplacementProductSelect(forms.Select):
 
 class ReplacementProductChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, product):
-        color = product.get_color_display() or '无颜色'
-        size = product.get_size_display() or '无尺码'
-        label = f'{product.name}｜颜色：{color}｜尺码：{size}｜条码：{product.barcode}'
+        label = product_label(product)
         return f'{label}｜无库存' if product_stock(product) <= 0 else label
 
     def clean(self, value):
