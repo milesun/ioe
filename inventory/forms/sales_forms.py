@@ -115,7 +115,8 @@ class SaleItemForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # 使用select_related优化查询
-        self.fields['product'].queryset = Product.objects.all().select_related('category')
+        self.fields['product'].queryset = Product.objects.filter(is_active=True).select_related('category')
+        self.fields['product'].error_messages['invalid_choice'] = '商品不可用或已停用，请先到商品管理恢复该商品'
         
         # 添加响应式布局的辅助类
         for field in self.fields.values():
@@ -167,4 +168,4 @@ class SaleItemForm(forms.ModelForm):
     
     def get_warnings(self):
         """获取表单验证过程中的警告信息（不阻止提交但需要提示用户的信息）"""
-        return self._warnings 
+        return self._warnings

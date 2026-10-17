@@ -24,11 +24,12 @@ def index(request):
     month_ago = today - timedelta(days=30)
     
     # 商品统计
-    total_products = Product.objects.count()
-    total_inventory_quantity = Inventory.objects.aggregate(total=Sum('quantity', default=0))['total']
+    total_products = Product.objects.filter(is_active=True).count()
+    active_inventory = Inventory.objects.filter(product__is_active=True)
+    total_inventory_quantity = active_inventory.aggregate(total=Sum('quantity', default=0))['total']
     active_products = total_products
-    low_stock_products = Inventory.objects.filter(quantity__lte=10).count()
-    out_of_stock_products = Inventory.objects.filter(quantity=0).count()
+    low_stock_products = active_inventory.filter(quantity__lte=10).count()
+    out_of_stock_products = active_inventory.filter(quantity=0).count()
     
     # 销售统计
     completed_sales = Sale.objects.filter(status='COMPLETED')

@@ -1,3 +1,15 @@
 {% extends 'inventory/base.html' %}
 {% block title %}停用商品 - {{ block.super }}{% endblock %}
-{% block content %}{% include 'inventory/includes/deactivate_confirmation.html' with entity=product entity_type='商品' return_route='product_list' %}{% endblock %}
+{% block content %}
+<section class="card"><div class="card-body">
+    <h1 class="card-title">停用商品</h1>
+    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+    <p><strong>{{ product.name }}</strong>｜{{ product.get_color_display }}｜{{ product.get_size_display }}｜{{ product.barcode }}</p>
+    <p>当前库存：<strong>{{ stock_quantity }}</strong> 件。只有库存为 0 才能停用。</p>
+    <p>停用后不再显示在库存管理和首页统计中。历史记录保留，可从商品管理的“已停用”列表恢复。</p>
+    <form method="post">{% csrf_token %}<div class="form-actions">
+        <a class="button button--secondary" href="{{ return_url }}">取消</a>
+        {% if product.is_active and stock_quantity == 0 %}<button class="button button--danger" type="submit">确认停用</button>{% elif not product.is_active %}<span>商品已停用</span>{% else %}<button class="button button--danger" type="submit" disabled>库存非零，无法停用</button>{% endif %}
+    </div></form>
+</div></section>
+{% endblock %}

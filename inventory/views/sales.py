@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from django.http import JsonResponse, HttpResponse
 from django.template.loader import render_to_string
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
+from django.db import OperationalError
 from django.conf import settings
 from django.utils.safestring import mark_safe
 from django.urls import reverse
@@ -17,7 +19,7 @@ from django.views.decorators.http import require_POST
 
 from inventory.models import Sale, SaleItem, Inventory, InventoryTransaction, Member, MemberTransaction, OperationLog, Product, Category, Supplier, MemberLevel
 from inventory.forms import SaleForm, SaleItemForm
-from inventory.models.inventory import update_inventory
+from inventory.models.inventory import update_inventory, lock_products_for_inventory
 from inventory.services import member_service
 from inventory.utils.query_utils import paginate_queryset
 
@@ -332,6 +334,7 @@ def sale_create(request):
                 with transaction.atomic():
                     if sale.member_id:
                         sale.member = Member.objects.select_for_update().get(pk=sale.member_id)
+                    lock_products_for_inventory([row['product'].pk for row in valid_products_data])
 
                     if sale.payment_method == 'balance':
                         if not sale.member_id:
@@ -491,6 +494,7 @@ def sale_item_create(request, sale_id):
                     if sale.status != 'DRAFT':
                         raise ValueError('只有未完成的销售单可以修改商品')
 
+                    lock_products_for_inventory([sale_item.product_id])
                     inventory = Inventory.objects.select_for_update().get(product=sale_item.product)
                     if inventory.quantity < sale_item.quantity:
                         raise ValueError('库存不足')
@@ -524,7 +528,7 @@ def sale_item_create(request, sale_id):
 
                 messages.success(request, '商品添加成功')
                 return redirect('sale_item_create', sale_id=sale.id)
-            except (Inventory.DoesNotExist, ValueError) as e:
+            except (Inventory.DoesNotExist, ValueError, ValidationError, OperationalError) as e:
                 messages.error(request, str(e))
     else:
         form = SaleItemForm()
@@ -660,101 +664,75 @@ def sale_complete(request, sale_id):
 
 @login_required
 def sale_cancel(request, sale_id):
-    """取消销售单视图"""
+    """取消草稿销售单，涉及的商品必须先恢复，失败时整笔回滚。"""
     sale = get_object_or_404(Sale, id=sale_id)
-    
-    if sale.status == 'COMPLETED':
-        messages.error(request, '已完成的销售单不能取消')
+    if sale.status != 'DRAFT':
+        messages.error(request, '只有未完成的销售单可以取消')
         return redirect('sale_detail', sale_id=sale.id)
-    if sale.status == 'CANCELLED':
-        messages.error(request, '销售单已取消，不能重复取消')
-        return redirect('sale_detail', sale_id=sale.id)
-    
     if request.method == 'POST':
         reason = request.POST.get('reason', '')
-
-        with transaction.atomic():
-            sale = Sale.objects.select_for_update().get(id=sale.id)
-            if sale.status == 'COMPLETED':
-                messages.error(request, '已完成的销售单不能取消')
-                return redirect('sale_detail', sale_id=sale.id)
-            if sale.status == 'CANCELLED':
-                messages.error(request, '销售单已取消，不能重复取消')
-                return redirect('sale_detail', sale_id=sale.id)
-
-            for item in sale.items.select_related('product'):
-                inventory = Inventory.objects.select_for_update().get(product=item.product)
-                inventory.quantity += item.quantity
-                inventory.save()
-
-                InventoryTransaction.objects.create(
-                    product=item.product,
-                    transaction_type='IN',
-                    quantity=item.quantity,
-                    operator=request.user,
-                    notes=f'取消销售单 #{sale.id} 恢复库存'
+        try:
+            with transaction.atomic():
+                sale = Sale.objects.select_for_update().get(id=sale.id)
+                if sale.status != 'DRAFT':
+                    raise ValidationError('销售单状态已变化，请刷新后重试')
+                items = list(sale.items.select_related('product').order_by('product_id', 'pk'))
+                lock_products_for_inventory([item.product_id for item in items])
+                for item in items:
+                    success, _, error = update_inventory(
+                        item.product, item.quantity, 'IN', request.user,
+                        notes=f'取消销售单 #{sale.id} 恢复库存',
+                    )
+                    if not success:
+                        raise ValidationError(error)
+                sale.status = 'CANCELLED'
+                sale.remark = f"{sale.remark or ''}\n取消原因: {reason}".strip()
+                sale.save()
+                OperationLog.objects.create(
+                    operator=request.user, operation_type='SALE',
+                    details=f'取消销售单 #{sale.id}，原因: {reason}',
+                    related_object_id=sale.id, related_content_type=ContentType.objects.get_for_model(Sale),
                 )
-
-            sale.status = 'CANCELLED'
-            sale.remark = f"{sale.remark or ''}\n取消原因: {reason}".strip()
-            sale.save()
-
-            OperationLog.objects.create(
-                operator=request.user,
-                operation_type='SALE',
-                details=f'取消销售单 #{sale.id}，原因: {reason}',
-                related_object_id=sale.id,
-                related_content_type=ContentType.objects.get_for_model(Sale)
-            )
-        
+        except (ValidationError, OperationalError) as error:
+            messages.error(request, '；'.join(error.messages) if isinstance(error, ValidationError) else '数据库暂时繁忙，请稍后重试')
+            return redirect('sale_detail', sale_id=sale.id)
         messages.success(request, '销售单已取消')
         return redirect('sale_list')
-    
     return render(request, 'inventory/sale_cancel.html', {'sale': sale})
+
 
 @login_required
 @require_POST
 def sale_delete_item(request, sale_id, item_id):
-    """删除销售单商品视图"""
-    with transaction.atomic():
-        sale = get_object_or_404(Sale.objects.select_for_update(), id=sale_id)
-
-        if sale.status != 'DRAFT':
-            messages.error(request, '只有未完成的销售单可以修改商品')
-            return redirect('sale_detail', sale_id=sale.id)
-
-        item = get_object_or_404(
-            SaleItem.objects.select_for_update().select_related('product'),
-            id=item_id,
-            sale=sale,
-        )
-        product = item.product
-        quantity = item.quantity
-
-        success, _, result = update_inventory(
-            product=product,
-            transaction_type='IN',
-            quantity=quantity,
-            operator=request.user,
-            notes=f'从销售单 #{sale.id} 中删除商品，恢复库存'
-        )
-        if not success:
-            raise ValueError(result)
-
-        OperationLog.objects.create(
-            operator=request.user,
-            operation_type='SALE',
-            details=f'从销售单 #{sale.id} 中删除商品 {product.name}',
-            related_object_id=sale.id,
-            related_content_type=ContentType.objects.get_for_model(Sale)
-        )
-
-        item.delete()
-        sale.update_total_amount()
-        sale.save()
-
+    """删除草稿销售明细并回库；停用商品需先恢复。"""
+    try:
+        with transaction.atomic():
+            sale = get_object_or_404(Sale.objects.select_for_update(), id=sale_id)
+            if sale.status != 'DRAFT':
+                raise ValidationError('只有未完成的销售单可以修改商品')
+            item = get_object_or_404(
+                SaleItem.objects.select_for_update().select_related('product'), id=item_id, sale=sale,
+            )
+            success, _, error = update_inventory(
+                item.product, item.quantity, 'IN', request.user,
+                notes=f'从销售单 #{sale.id} 中删除商品，恢复库存',
+            )
+            if not success:
+                raise ValidationError(error)
+            OperationLog.objects.create(
+                operator=request.user, operation_type='SALE',
+                details=f'从销售单 #{sale.id} 中删除商品 {item.product.name}',
+                related_object_id=sale.id, related_content_type=ContentType.objects.get_for_model(Sale),
+            )
+            item.delete()
+            sale.update_total_amount()
+            sale.save()
+    except (ValidationError, OperationalError) as error:
+        messages.error(request, '；'.join(error.messages) if isinstance(error, ValidationError) else '数据库暂时繁忙，请稍后重试')
+        return redirect('sale_detail', sale_id=sale_id)
     messages.success(request, '商品已从销售单中删除')
     return redirect('sale_item_create', sale_id=sale.id)
+
 
 @login_required
 def member_purchases(request):

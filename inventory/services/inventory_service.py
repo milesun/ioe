@@ -16,6 +16,7 @@ from inventory.models import (
     Category
 )
 from inventory.exceptions import InsufficientStockError, InventoryValidationError
+from inventory.models.inventory import lock_products_for_inventory
 from inventory.utils.logging import log_exception, log_action
 
 class InventoryService:
@@ -63,6 +64,8 @@ class InventoryService:
         
         if transaction_type not in ('IN', 'OUT', 'ADJUST'):
             raise InventoryValidationError("交易类型无效")
+
+        lock_products_for_inventory([product.pk])
         
         # Get or create inventory
         inventory, created = Inventory.objects.get_or_create(
@@ -188,4 +191,4 @@ class InventoryService:
         """
         return Inventory.objects.annotate(
             value=F('quantity') * F('product__cost')
-        ).aggregate(total_value=Sum('value'))['total_value'] or 0 
+        ).aggregate(total_value=Sum('value'))['total_value'] or 0

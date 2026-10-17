@@ -92,6 +92,8 @@ def quote_aftersale(sale, payload):
         if quantity > item.returnable_quantity:
             raise ValidationError(f'{item.product.name} 最多还可退 {item.returnable_quantity} 件。')
         if quantity:
+            if not item.product.is_active:
+                raise ValidationError(f'{item.product.name}（条码：{item.product.barcode}）已停用，请先到商品管理恢复该商品')
             # 对累计数量取整再相减，分次退货与一次性退货得到相同金额。
             amount = budget * (item.returned_quantity + quantity) // item.quantity - budget * item.returned_quantity // item.quantity
             lines.append({
@@ -185,6 +187,10 @@ def complete_aftersale(*, sale_id, payload, request_key, expected_quote, operato
         quote['version'] -= 1
         if digest(quote) != digest(expected_quote):
             raise ValidationError('价格、会员或可退数量发生变化，请重新预览。')
+        from inventory.models.inventory import lock_products_for_inventory
+        lock_products_for_inventory([
+            line['product_id'] for line in quote['return_lines'] + quote['replacement_lines']
+        ])
         new_sale = None
         if payload['kind'] == 'EXCHANGE':
             paid = quote['new_balance_paid']

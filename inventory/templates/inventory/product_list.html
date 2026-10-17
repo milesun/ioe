@@ -32,30 +32,36 @@
             <div class="card-body">
                 <div class="row g-3 mb-4 align-items-center">
                     <div class="col-md-6">
-                        <form method="get" action="{% url 'product_list' %}" class="mb-0">
+                        <form method="get" action="{% url 'product_list' %}" class="mb-0" id="product-filter-form">
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
                                 <input type="text" class="form-control" id="searchInput" name="search" 
                                        placeholder="{% if request.LANGUAGE_CODE == 'en' %}Search product name or barcode...{% else %}搜索商品名称或条码...{% endif %}" value="{{ search_query }}">
                                 <input type="hidden" name="sort" value="{{ sort_by }}">
                                 <input type="hidden" name="category" value="{{ selected_category }}">
-                                <input type="hidden" name="status" value="{{ selected_status }}">
                                 <button type="submit" class="btn btn-primary">{% if request.LANGUAGE_CODE == 'en' %}Search{% else %}搜索{% endif %}</button>
                             </div>
                         </form>
                     </div>
                     <div class="col-md-6">
-                        <div class="d-flex justify-content-md-end">
+                        <div class="d-flex justify-content-md-end flex-wrap gap-2">
+                            <div>
+                                <select name="status" class="form-select" aria-label="商品状态" form="product-filter-form" onchange="this.form.requestSubmit()">
+                                    <option value="active" {% if selected_status == 'active' %}selected{% endif %}>已启用</option>
+                                    <option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>已停用</option>
+                                    <option value="all" {% if selected_status == 'all' %}selected{% endif %}>全部状态</option>
+                                </select>
+                            </div>
                             <div class="btn-group me-2">
-                                <a href="{% url 'product_list' %}?sort=updated{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" 
+                                <a href="{% url 'product_list' %}?sort=updated{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if selected_category %}&category={{ selected_category|urlencode }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}"
                                    class="btn btn-outline-secondary {% if sort_by == 'updated' %}active{% endif %}">
                                    <i class="bi bi-clock-history"></i> {% if request.LANGUAGE_CODE == 'en' %}Recent{% else %}最近更新{% endif %}
                                 </a>
-                                <a href="{% url 'product_list' %}?sort=name{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" 
+                                <a href="{% url 'product_list' %}?sort=name{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if selected_category %}&category={{ selected_category|urlencode }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}"
                                    class="btn btn-outline-secondary {% if sort_by == 'name' %}active{% endif %}">
                                    <i class="bi bi-sort-alpha-down"></i> {% if request.LANGUAGE_CODE == 'en' %}Name{% else %}名称{% endif %}
                                 </a>
-                                <a href="{% url 'product_list' %}?sort=created{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" 
+                                <a href="{% url 'product_list' %}?sort=created{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if selected_category %}&category={{ selected_category|urlencode }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}"
                                    class="btn btn-outline-secondary {% if sort_by == 'created' %}active{% endif %}">
                                    <i class="bi bi-calendar-plus"></i> {% if request.LANGUAGE_CODE == 'en' %}Created{% else %}创建时间{% endif %}
                                 </a>
@@ -84,6 +90,8 @@
                                 <th>{% if request.LANGUAGE_CODE == 'en' %}Color{% else %}颜色{% endif %}</th>
                                 <th>{% if request.LANGUAGE_CODE == 'en' %}Size{% else %}尺码{% endif %}</th>
                                 <th>{% if request.LANGUAGE_CODE == 'en' %}Price{% else %}单价{% endif %}</th>
+                                <th>库存</th>
+                                <th>状态</th>
                                 <th class="d-none d-md-table-cell">{% if request.LANGUAGE_CODE == 'en' %}Description{% else %}描述{% endif %}</th>
                                 <th>{% if request.LANGUAGE_CODE == 'en' %}Actions{% else %}操作{% endif %}</th>
                             </tr>
@@ -128,21 +136,31 @@
                                 <td>
                                     <span class="fw-bold">¥{{ product.price }}</span>
                                 </td>
+                                <td>{{ product.inventory.quantity|default_if_none:0|default:0 }}</td>
+                                <td>{% if product.is_active %}<span class="badge bg-success">已启用</span>{% else %}<span class="badge bg-secondary">已停用</span>{% endif %}</td>
                                 <td class="d-none d-md-table-cell">{{ product.description|truncatewords:10 }}</td>
                                 <td>
                                     <div class="btn-group">
                                         <a href="{% url 'product_edit' product.id %}" class="btn btn-sm btn-outline-primary" title="编辑">
                                             <i class="bi bi-pencil"></i>
                                         </a>
-                                        <a href="#" class="btn btn-sm btn-outline-danger" title="删除">
-                                            <i class="bi bi-trash"></i>
+                                        {% if perms.inventory.change_product %}
+                                        {% if product.is_active %}
+                                        <a href="{% url 'product_delete' product.id %}?{{ list_query }}" class="btn btn-sm btn-outline-danger" title="停用" aria-label="停用商品">
+                                            <i class="bi bi-pause-circle" aria-hidden="true"></i>
                                         </a>
+                                        {% else %}
+                                        <form method="post" action="{% url 'product_restore' product.id %}?{{ list_query }}">
+                                            {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success" title="恢复">恢复</button>
+                                        </form>
+                                        {% endif %}
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="7" class="text-center py-5">
+                                <td colspan="9" class="text-center py-5">
                                     <div class="d-flex flex-column align-items-center">
                                         <i class="bi bi-inbox text-muted" style="font-size: 2.5rem;"></i>
                                         <p class="mt-3 mb-1">{% if request.LANGUAGE_CODE == 'en' %}No products yet{% else %}暂无商品数据{% endif %}</p>
@@ -162,7 +180,7 @@
                         <ul class="pagination">
                             {% if page_obj.has_previous %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" aria-label="上一页">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if selected_category %}&category={{ selected_category|urlencode }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" aria-label="上一页">
                                     <span aria-hidden="true">&laquo;</span>
                                 </a>
                             </li>
@@ -181,14 +199,14 @@
                                 </li>
                                 {% elif i > page_obj.number|add:"-4" and i < page_obj.number|add:"4" %}
                                 <li class="page-item">
-                                    <a class="page-link" href="?page={{ i }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">{{ i }}</a>
+                                    <a class="page-link" href="?page={{ i }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if selected_category %}&category={{ selected_category|urlencode }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">{{ i }}</a>
                                 </li>
                                 {% endif %}
                             {% endfor %}
                             
                             {% if page_obj.has_next %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" aria-label="下一页">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if selected_category %}&category={{ selected_category|urlencode }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" aria-label="下一页">
                                     <span aria-hidden="true">&raquo;</span>
                                 </a>
                             </li>
@@ -226,31 +244,11 @@
         const categoryDropdown = document.getElementById('categoryDropdown');
         if (categoryDropdown) {
             categoryDropdown.addEventListener('change', function() {
-                // 构建URL
-                let url = '{% url 'product_list' %}?';
-                
-                // 添加分类参数 (如果有选择分类)
-                if (this.value) {
-                    url += 'category=' + this.value;
-                }
-                
-                // 添加排序参数 (如果存在)
-                {% if sort_by %}
-                url += (url.endsWith('?') ? '' : '&') + 'sort={{ sort_by }}';
-                {% endif %}
-                
-                // 添加搜索参数 (如果存在)
-                {% if search_query %}
-                url += (url.endsWith('?') ? '' : '&') + 'search={{ search_query }}';
-                {% endif %}
-                
-                // 添加状态参数 (如果存在)
-                {% if selected_status %}
-                url += (url.endsWith('?') ? '' : '&') + 'status={{ selected_status }}';
-                {% endif %}
-                
-                // 导航到构建的URL
-                window.location.href = url;
+                const url = new URL(window.location.href);
+                url.searchParams.delete('page');
+                if (this.value) url.searchParams.set('category', this.value);
+                else url.searchParams.delete('category');
+                window.location.href = url.toString();
             });
         }
     });

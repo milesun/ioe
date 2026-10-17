@@ -2,6 +2,8 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
+from django.urls import reverse
+from urllib.parse import urlencode
 from django.contrib.contenttypes.models import ContentType
 
 # 显式导入原始models
@@ -26,6 +28,9 @@ def barcode_product_create(request):
         # 首先检查数据库中是否已存在该条码的商品
         try:
             existing_product = inventory.models.Product.objects.get(barcode=barcode)
+            if not existing_product.is_active:
+                messages.warning(request, '该条码对应的商品已停用，请在已停用列表中恢复，请勿重复添加')
+                return redirect(reverse('product_list') + '?' + urlencode({'status': 'inactive', 'search': barcode}))
             messages.warning(request, f'条码 {barcode} 的商品已存在，请勿重复添加')
             return redirect('product_list')
         except inventory.models.Product.DoesNotExist:

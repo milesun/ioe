@@ -36,7 +36,8 @@ class InventoryTransactionForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # 使用select_related优化查询
-        self.fields['product'].queryset = Product.objects.all().select_related('category')
+        self.fields['product'].queryset = Product.objects.filter(is_active=True).select_related('category')
+        self.fields['product'].error_messages['invalid_choice'] = '商品不可用或已停用，请先到商品管理恢复该商品'
         
         self.fields['product'].empty_label = _('请选择商品')
         labels = {'product': '商品', 'quantity': '数量', 'notes': '备注', 'adjustment_action': '调整方式'}

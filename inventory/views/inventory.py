@@ -10,6 +10,9 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.paginator import Paginator
 
 from django.db import transaction as db_transaction
+from django.db import OperationalError
+from django.core.exceptions import ValidationError
+from inventory.models.inventory import lock_products_for_inventory
 from inventory.permissions.decorators import permission_required
 from inventory.forms.inventory_forms import InventoryAdjustmentForm
 
@@ -29,7 +32,7 @@ def inventory_list(request):
     size = request.GET.get('size', '')
     search_query = request.GET.get('search', '')
     
-    inventory_items = Inventory.objects.select_related('product', 'product__category').all()
+    inventory_items = Inventory.objects.select_related('product', 'product__category').filter(product__is_active=True)
     
     if category_id:
         inventory_items = inventory_items.filter(product__category_id=category_id)
@@ -167,7 +170,7 @@ def inventory_in(request):
         product_id = request.GET.get('product_id')
         if product_id:
             try:
-                form.fields['product'].initial = Product.objects.get(id=product_id)
+                form.fields['product'].initial = Product.objects.get(id=product_id, is_active=True)
             except Product.DoesNotExist:
                 pass
     
@@ -226,7 +229,7 @@ def inventory_out(request):
         product_id = request.GET.get('product_id')
         if product_id:
             try:
-                form.fields['product'].initial = Product.objects.get(id=product_id)
+                form.fields['product'].initial = Product.objects.get(id=product_id, is_active=True)
             except Product.DoesNotExist:
                 pass
     
@@ -250,6 +253,12 @@ def inventory_adjust(request):
             quantity = form.cleaned_data['quantity']
             notes = form.cleaned_data['notes']
             
+            try:
+                with db_transaction.atomic():
+                    lock_products_for_inventory([product.pk])
+            except (ValidationError, OperationalError) as error:
+                form.add_error('product', '；'.join(error.messages) if isinstance(error, ValidationError) else '数据库暂时繁忙，请稍后重试')
+                return render(request, 'inventory/inventory_adjust_form.html', {'form': form, 'current_quantity': 0})
             try:
                 inventory = Inventory.objects.select_for_update().get(product=product)
                 current_quantity = inventory.quantity
@@ -310,7 +319,7 @@ def inventory_adjust(request):
         product_id = request.GET.get('product_id')
         if product_id:
             try:
-                product = Product.objects.get(id=product_id)
+                product = Product.objects.get(id=product_id, is_active=True)
                 form.initial['product'] = product
                 form.fields['product'].initial = product
             except Product.DoesNotExist:

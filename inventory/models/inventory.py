@@ -81,10 +81,29 @@ def check_inventory(product, quantity):
         return False
 
 
+def lock_products_for_inventory(product_ids, *, require_active=True):
+    """在调用方事务内锁定商品；实际 UPDATE 也能在 SQLite 下阻止并发停用。"""
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError('商品库存锁必须在 transaction.atomic() 内使用')
+    products = []
+    for product_id in sorted(set(product_ids)):
+        if not Product.objects.filter(pk=product_id).update(is_active=models.F('is_active')):
+            raise ValidationError('商品不存在')
+        product = Product.objects.get(pk=product_id)
+        if require_active and not product.is_active:
+            raise ValidationError(
+                f'{product.name}｜{product.get_color_display()}｜{product.get_size_display()}'
+                f'（条码：{product.barcode}）已停用，请先到商品管理恢复该商品'
+            )
+        products.append(product)
+    return products
+
+
 def update_inventory(product, quantity, transaction_type, operator, notes='', *, aftersale=None):
     """更新库存并记录交易"""
     try:
         with transaction.atomic():
+            lock_products_for_inventory([product.pk])
             stock = Inventory.objects.filter(product=product)
             if quantity < 0:
                 stock = stock.filter(quantity__gte=-quantity)
@@ -116,7 +135,7 @@ def update_inventory(product, quantity, transaction_type, operator, notes='', *,
         return True, inventory, record
     except Exception as e:
         # Catch outside atomic so both quantity and ledger are rolled back.
-        return False, None, str(e)
+        return False, None, '；'.join(e.messages) if isinstance(e, ValidationError) else str(e)
 
 
 class StockAlert(models.Model):

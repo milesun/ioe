@@ -13,6 +13,7 @@ from inventory.models import (
     InventoryCheckItem,
 )
 from inventory.exceptions import InventoryValidationError
+from inventory.models.inventory import lock_products_for_inventory
 from inventory.utils.logging import log_exception, log_action
 
 class InventoryCheckService:
@@ -43,13 +44,13 @@ class InventoryCheckService:
             )
             
             # Query for products to include
-            products_query = Product.objects.all()
+            products_query = Product.objects.filter(is_active=True)
             if category:
                 products_query = products_query.filter(category=category)
             
             # Add inventory check items
             items = []
-            for product in products_query:
+            for product in lock_products_for_inventory(products_query.values_list('pk', flat=True)):
                 try:
                     inventory = Inventory.objects.get(product=product)
                     items.append(
@@ -214,6 +215,10 @@ class InventoryCheckService:
         
         # If adjusting inventory, update quantities
         if adjust_inventory:
+            lock_products_for_inventory(
+                inventory_check.items.filter(difference__isnull=False).exclude(difference=0)
+                .values_list('product_id', flat=True)
+            )
             for item in inventory_check.items.filter(difference__isnull=False):
                 if item.difference != 0:  # Only adjust if there's a difference
                     try:
@@ -312,4 +317,4 @@ class InventoryCheckService:
             'system_value': system_value,
             'actual_value': actual_value,
             'value_difference': actual_value - system_value,
-        } 
+        }

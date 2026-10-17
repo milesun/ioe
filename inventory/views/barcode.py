@@ -145,7 +145,8 @@ def barcode_lookup(request):
             'specification': product.specification,
             'manufacturer': product.manufacturer,
             'description': product.description,
-            'message': '商品已存在于系统中'
+            'is_active': product.is_active,
+            'message': '商品已存在于系统中' if product.is_active else '该条码对应的商品已停用，请到商品管理 → 已停用中恢复'
         })
     except inventory.models.Product.DoesNotExist:
         # 调用阿里云条码服务查询商品信息
@@ -186,6 +187,8 @@ def product_by_barcode(request, barcode):
     try:
         # 先尝试精确匹配条码
         product = inventory.models.Product.objects.get(barcode=barcode)
+        if not product.is_active:
+            return JsonResponse({'success': False, 'message': '商品已停用，请先到商品管理恢复该商品'})
         # 获取库存信息
         try:
             inventory_obj = inventory.models.Inventory.objects.get(product=product)
@@ -207,7 +210,7 @@ def product_by_barcode(request, barcode):
         })
     except inventory.models.Product.DoesNotExist:
         # 如果精确匹配失败，尝试模糊匹配条码或名称
-        products = inventory.models.Product.objects.filter(
+        products = inventory.models.Product.objects.filter(is_active=True).filter(
             Q(barcode__icontains=barcode) | 
             Q(name__icontains=barcode)
         ).order_by('name')[:5]  # 限制返回数量

@@ -6,16 +6,38 @@ import csv
 import io
 import logging
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 
 from inventory.models import Product, Category, ProductImage, ProductBatch, Inventory, OperationLog
-from inventory.models.inventory import update_inventory
+from inventory.models.inventory import update_inventory, lock_products_for_inventory
 
 
 logger = logging.getLogger(__name__)
+
+
+def set_product_active(product_id, active, operator):
+    """停用、恢复统一走这里，避免绕过库存检查或留下半条操作日志。"""
+    if not operator.has_perm('inventory.change_product'):
+        raise PermissionDenied('您没有修改商品的权限')
+    with transaction.atomic():
+        product = lock_products_for_inventory([product_id], require_active=False)[0]
+        if product.is_active == active:
+            return product, False
+        quantity = Inventory.objects.filter(product=product).values_list('quantity', flat=True).first()
+        if not active and quantity not in (None, 0):
+            raise ValidationError(f'当前库存为 {quantity} 件，只有库存为 0 的商品才能停用')
+        product.is_active = active
+        product.save(update_fields=['is_active', 'updated_at'])
+        action = '恢复' if active else '停用'
+        OperationLog.objects.create(
+            operator=operator, operation_type='OTHER',
+            details=f'{action}商品：{product.name}｜{product.get_color_display()}｜{product.get_size_display()}（条码：{product.barcode}）',
+            related_object_id=product.pk, related_content_type=ContentType.objects.get_for_model(Product),
+        )
+        return product, True
 
 
 def create_products_with_stock(common_data, variants, operator, additional_images=()):

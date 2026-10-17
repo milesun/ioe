@@ -12,7 +12,10 @@ def clean_product_barcode(barcode, exclude_pk=None):
     existing = Product.objects.filter(barcode=barcode)
     if exclude_pk:
         existing = existing.exclude(pk=exclude_pk)
-    if barcode and existing.exists():
+    product = existing.first() if barcode else None
+    if product:
+        if not product.is_active:
+            raise forms.ValidationError('该条码对应的商品已停用，请到商品管理 → 已停用中恢复，请勿重复添加')
         raise forms.ValidationError('该条码已存在，请勿重复添加')
     return barcode
 
@@ -62,7 +65,7 @@ class ProductForm(forms.ModelForm):
     
     class Meta:
         model = Product
-        fields = ['barcode', 'name', 'category', 'color', 'size', 'description', 'price', 'cost', 'image', 'specification', 'manufacturer', 'is_active']
+        fields = ['barcode', 'name', 'category', 'color', 'size', 'description', 'price', 'cost', 'image', 'specification', 'manufacturer']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '请输入商品名称', 'aria-label': '商品名称'}),
@@ -74,7 +77,6 @@ class ProductForm(forms.ModelForm):
             'color': forms.Select(attrs={'class': 'form-control form-select', 'aria-label': '颜色'}),
             'size': forms.Select(attrs={'class': 'form-control form-select', 'aria-label': '尺码'}),
             'image': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*', 'aria-label': '商品图片'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input', 'aria-label': '是否启用'}),
         }
         
     def __init__(self, *args, **kwargs):

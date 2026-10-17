@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.http import JsonResponse, HttpResponse
 from django.contrib import messages
 from django.db.models import Q, Count, Sum
@@ -7,6 +7,8 @@ from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, OperationalError
 from django.urls import reverse
+from django.views.decorators.http import require_POST
+from urllib.parse import urlencode
 from django.utils import timezone
 
 import csv
@@ -92,13 +94,15 @@ def product_list(request):
     # 获取筛选参数
     search_query = request.GET.get('search', '')
     category_id = request.GET.get('category', '')
-    status = request.GET.get('status', 'active')  # 默认显示活跃商品
+    status = request.GET.get('status', 'active')
+    if status not in ('active', 'inactive', 'all'):
+        status = 'active'
     sort_by = request.GET.get('sort', 'updated')  # 修改默认排序为更新时间
     
     print(f"DEBUG: 列表筛选参数 - 搜索: {search_query}, 分类: {category_id}, 状态: {status}, 排序: {sort_by}")
     
     # 基本查询集
-    products = Product.objects.select_related('category').all()
+    products = Product.objects.select_related('category', 'inventory').all()
     print(f"DEBUG: 初始查询集数量: {products.count()}")
     
     # 应用筛选
@@ -157,6 +161,7 @@ def product_list(request):
         'total_products': total_products,
         'active_products': active_products,
         'products': page_obj,
+        'list_query': urlencode({'search': search_query, 'category': category_id, 'sort': sort_by}),
     }
     
     return render(request, 'inventory/product_list.html', context)
@@ -271,7 +276,7 @@ def product_update(request, pk):
             product = form.save(commit=False)
             product.updated_at = timezone.now()
             product.updated_by = request.user
-            product.save()
+            product.save(update_fields=[*ProductForm.Meta.fields, 'updated_at'])
             
             # 只有当图片表单集有效时才处理图片
             if image_formset.is_valid():
@@ -309,7 +314,7 @@ def product_update(request, pk):
             try:
                 inventory = Inventory.objects.get(product=product)
                 inventory.warning_level = warning_level
-                inventory.save()
+                inventory.save(update_fields=['warning_level', 'updated_at'])
             except Inventory.DoesNotExist:
                 Inventory.objects.create(
                     product=product,
@@ -342,26 +347,50 @@ def product_update(request, pk):
     return render(request, 'inventory/product/product_form.html', context)
 
 
+def _product_list_url(request, status='active'):
+    filters = {key: request.GET[key] for key in ('search', 'category', 'sort') if request.GET.get(key)}
+    filters['status'] = status
+    return reverse('product_list') + '?' + urlencode(filters)
+
+
 @login_required
+@permission_required('inventory.change_product', raise_exception=True)
 def product_delete(request, pk):
-    """删除商品视图"""
+    """保留原删除路由，实际只允许停用零库存商品。"""
     product = get_object_or_404(Product, pk=pk)
-    
+    error = None
     if request.method == 'POST':
-        product_name = product.name
-        
-        # 标记为不活跃而不是真的删除
-        product.is_active = False
-        product.updated_at = timezone.now()
-        product.updated_by = request.user
-        product.save()
-        
-        messages.success(request, f'商品 {product_name} 已标记为不活跃')
-        return redirect('product_list')
-    
+        try:
+            product, changed = product_service.set_product_active(pk, False, request.user)
+        except ValidationError as exc:
+            error = '；'.join(exc.messages)
+        except OperationalError:
+            error = '数据库暂时繁忙，请稍后重试，本次未停用商品'
+        else:
+            messages.success(request, f'商品 {product.name} 已停用' if changed else '商品已处于停用状态')
+            return redirect(_product_list_url(request))
+    stock_quantity = Inventory.objects.filter(product=product).values_list('quantity', flat=True).first()
     return render(request, 'inventory/product/product_confirm_delete.html', {
-        'product': product
+        'product': product, 'stock_quantity': stock_quantity if stock_quantity is not None else 0,
+        'error': error, 'return_url': _product_list_url(request),
     })
+
+
+@login_required
+@permission_required('inventory.change_product', raise_exception=True)
+@require_POST
+def product_restore(request, pk):
+    get_object_or_404(Product, pk=pk)
+    try:
+        product, changed = product_service.set_product_active(pk, True, request.user)
+    except ValidationError as exc:
+        messages.error(request, '；'.join(exc.messages))
+        return redirect(_product_list_url(request, 'inactive'))
+    except OperationalError:
+        messages.error(request, '数据库暂时繁忙，请稍后重试，本次未恢复商品')
+        return redirect(_product_list_url(request, 'inactive'))
+    messages.success(request, f'商品 {product.name} 已恢复，可继续入库' if changed else '商品已处于启用状态')
+    return redirect(_product_list_url(request))
 
 
 @login_required

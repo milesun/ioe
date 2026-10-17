@@ -52,6 +52,7 @@ urlpatterns = [
     path('products/<int:pk>/edit/', product_views.product_update, name='product_edit'),
     path('products/<int:pk>/', product_views.product_detail, name='product_detail'),
     path('products/<int:pk>/delete/', product_views.product_delete, name='product_delete'),
+    path('products/<int:pk>/restore/', product_views.product_restore, name='product_restore'),
     
     # 使用新的条码视图
     path('products/barcode/', views_barcode.barcode_product_create, name='barcode_product_create'),
