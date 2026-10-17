@@ -1,0 +1,71 @@
+name: Deploy damai
+
+on:
+  push:
+    branches: [damai]
+
+concurrency:
+  group: deploy-damai
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+    steps:
+      - name: 更新服务器
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$RUNNER_TEMP/ioe_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$RUNNER_TEMP/ioe_hosts"
+
+          ssh -T \
+            -i "$RUNNER_TEMP/ioe_key" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ioe_hosts" \
+            -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /home/lc/ioe
+          PYTHON=/home/lc/miniconda3/envs/ioe/bin/python
+
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes'
+
+          if [ "$(git branch --show-current)" != damai ] || [ -n "$(git status --porcelain)" ]; then
+            echo "服务器必须处于 damai 分支，且工作区没有改动"
+            exit 1
+          fi
+
+          git fetch origin damai
+
+          if ! git diff --quiet HEAD origin/damai -- requirements.txt inventory/models.py inventory/models inventory/migrations inventory/settings.py project/settings.py; then
+            echo "涉及模型、迁移、依赖或设置变化，请手动部署"
+            exit 1
+          fi
+
+          "$PYTHON" manage.py migrate --check
+          git merge --ff-only origin/damai
+          "$PYTHON" manage.py collectstatic --noinput
+          sudo -n /usr/bin/systemctl restart ioe
+
+          curl --fail --silent --show-error \
+            --retry 5 --retry-connrefused --retry-delay 2 --max-time 5 \
+            --output /dev/null http://127.0.0.1:8081/accounts/login/
+
+          echo "IOE 自动部署完成"
+          REMOTE
