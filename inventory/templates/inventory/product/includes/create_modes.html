@@ -1,0 +1,5 @@
+{% load i18n %}
+<nav class="product-create-modes" aria-label="{% translate '商品新增方式' %}">
+    <a href="{% url 'product_create' %}" class="button {% if mode != 'bulk' %}button--primary{% else %}button--secondary{% endif %}" {% if mode != 'bulk' %}aria-current="page"{% endif %}>{% translate '单个新增' %}</a>
+    <a href="{% url 'product_create' %}?mode=bulk" class="button {% if mode == 'bulk' %}button--primary{% else %}button--secondary{% endif %}" {% if mode == 'bulk' %}aria-current="page"{% endif %}>{% translate '批量新增' %}</a>
+</nav>

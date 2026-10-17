@@ -4,6 +4,8 @@ from django.http import JsonResponse, HttpResponse
 from django.contrib import messages
 from django.db.models import Q, Count, Sum
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, OperationalError
 from django.urls import reverse
 from django.utils import timezone
 
@@ -23,6 +25,7 @@ from inventory.forms import (
     ProductForm, CategoryForm, ProductBatchForm,
     ProductImageFormSet, ProductBulkForm, ProductImportForm
 )
+from inventory.forms.product_forms import ProductVariantCommonForm, ProductVariantFormSet
 from inventory.utils import generate_thumbnail, validate_csv
 from inventory.services import product_service
 
@@ -189,83 +192,68 @@ def product_detail(request, pk):
 
 @login_required
 def product_create(request):
-    """创建商品视图"""
+    """单个或按尺码新增商品；两种方式共用创建和初始入库服务。"""
+    mode = request.POST.get('mode', 'single') if request.method == 'POST' else request.GET.get('mode', 'single')
+    if mode not in ('single', 'bulk'):
+        return HttpResponse('未知的商品新增方式', status=400)
+    can_set_initial_stock = request.user.has_perm('inventory.change_inventory')
+    data = request.POST if request.method == 'POST' else None
+    files = request.FILES if request.method == 'POST' else None
+    form_class = ProductVariantCommonForm if mode == 'bulk' else ProductForm
+    form = form_class(data, files, can_set_initial_stock=can_set_initial_stock)
+    variants = ProductVariantFormSet(
+        data, prefix='variants', form_kwargs={'can_set_initial_stock': can_set_initial_stock},
+    ) if mode == 'bulk' else None
+    image_formset = ProductImageFormSet(data, files, prefix='images') if mode == 'single' else None
+
     if request.method == 'POST':
-        form = ProductForm(request.POST, request.FILES)
-        image_formset = ProductImageFormSet(request.POST, request.FILES, prefix='images')
-        
-        # 修改验证逻辑，只检查表单是否有效，不强制检查图片表单集
-        if form.is_valid():
-            # 保存商品数据
-            product = form.save(commit=False)
-            product.created_by = request.user
-            product.is_active = True  # 确保商品默认为活跃状态
-            product.save()
-            
-            # 只有当图片表单集有效时才处理图片
-            if image_formset.is_valid():
-                # 保存商品图片
-                for image_form in image_formset:
-                    if image_form.cleaned_data and not image_form.cleaned_data.get('DELETE'):
-                        image = image_form.save(commit=False)
-                        image.product = product
-                        
-                        # 处理图片文件
-                        if image.image:
-                            # 生成缩略图
-                            thumbnail = generate_thumbnail(image.image, (300, 300))
-                            
-                            # 保存缩略图
-                            thumb_name = f'thumb_{uuid.uuid4()}.jpg'
-                            thumb_path = f'products/thumbnails/{thumb_name}'
-                            thumb_file = io.BytesIO()
-                            thumbnail.save(thumb_file, format='JPEG')
-                            
-                            # 设置缩略图路径
-                            image.thumbnail = thumb_path
-                        
-                        image.save()
-            
-            # 创建初始库存记录
-            warning_level = 10  # 设置一个默认的预警值
-            if 'warning_level' in form.cleaned_data and form.cleaned_data['warning_level'] is not None:
-                warning_level = form.cleaned_data['warning_level']
-                
-            Inventory.objects.create(
-                product=product,
-                quantity=0,
-                warning_level=warning_level
-            )
-            
-            messages.success(request, f'商品 {product.name} 创建成功')
-            
-            # 如果是从批量页面过来，返回批量页面
-            if 'next' in request.POST and request.POST['next'] == 'bulk':
-                return redirect('product_bulk_create')
-            
-            # 修改重定向，解决模板不存在的问题
-            return redirect('product_list')
+        common_valid = form.is_valid()
+        rows_valid = variants.is_valid() if variants is not None else True
+        if common_valid and rows_valid and variants is not None:
+            sizes = [row.cleaned_data['size'] for row in variants if row.cleaned_data]
+            if set(sizes) != set(form.cleaned_data['selected_sizes']):
+                form.add_error('selected_sizes', '所选尺码与明细不一致，请重新勾选尺码')
+                rows_valid = False
+        if common_valid and rows_valid:
+            rows = [row.cleaned_data for row in variants if row.cleaned_data] if variants is not None else [{
+                'barcode': form.cleaned_data['barcode'], 'size': form.cleaned_data['size'],
+                'initial_stock': form.cleaned_data['initial_stock'],
+            }]
+            additional_images = []
+            if image_formset is not None and image_formset.is_valid():
+                additional_images = image_formset.save(commit=False)
+            try:
+                products = product_service.create_products_with_stock(
+                    form.cleaned_data, rows, request.user, additional_images=additional_images,
+                )
+            except ValidationError as error:
+                form.add_error(None, '；'.join(error.messages))
+            except IntegrityError:
+                form.add_error(None, '条码已存在或已被其他人使用，本次均未保存，请检查后重新提交')
+            except OperationalError:
+                form.add_error(None, '数据库暂时不可用，本次均未保存，请稍后重试')
+            except OSError:
+                form.add_error(None, '图片保存失败，本次均未保存，请重新选择图片后重试')
+            else:
+                quantity = sum(row['initial_stock'] for row in rows)
+                messages.success(request, f'成功新增 {len(products)} 个商品，初始入库共 {quantity} 件')
+                return redirect('product_list')
     else:
-        form = ProductForm()
-        image_formset = ProductImageFormSet(prefix='images')
-        
-        # 如果有传入的分类参数，设置初始值
         category_id = request.GET.get('category')
         if category_id:
             try:
                 form.fields['category'].initial = int(category_id)
             except (ValueError, TypeError):
                 pass
-    
+
     context = {
-        'form': form,
-        'image_formset': image_formset,
-        'title': '创建商品',
-        'submit_text': '保存商品',
-        'next': request.GET.get('next', '')
+        'form': form, 'image_formset': image_formset, 'variants': variants,
+        'mode': mode, 'can_set_initial_stock': can_set_initial_stock,
+        'title': '批量新增商品' if mode == 'bulk' else '创建商品',
+        'submit_text': '保存商品', 'needs_image_reselect': bool(request.FILES),
     }
-    
-    return render(request, 'inventory/product/product_form.html', context)
+    template = 'inventory/product/product_variant_form.html' if mode == 'bulk' else 'inventory/product/product_form.html'
+    return render(request, template, context)
 
 
 @login_required

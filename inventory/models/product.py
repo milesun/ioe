@@ -69,9 +69,9 @@ class Product(models.Model):
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
     
     def clean(self):
-        if self.price < 0:
+        if self.price is not None and self.price < 0:
             raise ValidationError('售价不能为负数')
-        if self.cost < 0:
+        if self.cost is not None and self.cost < 0:
             raise ValidationError('成本价不能为负数')
     
     class Meta:
@@ -183,4 +183,4 @@ class Supplier(models.Model):
         verbose_name_plural = '供应商'
     
     def __str__(self):
-        return self.name 
+        return self.name

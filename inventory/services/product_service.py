@@ -4,11 +4,94 @@
 """
 import csv
 import io
+import logging
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 
-from inventory.models import Product, Category, ProductImage, ProductBatch, Inventory
+from inventory.models import Product, Category, ProductImage, ProductBatch, Inventory, OperationLog
+from inventory.models.inventory import update_inventory
+
+
+logger = logging.getLogger(__name__)
+
+
+def create_products_with_stock(common_data, variants, operator, additional_images=()):
+    """一次提交的商品、初始入库和日志全部成功后才提交。图片只保存一份。"""
+    if not operator.is_authenticated or not operator.is_active:
+        raise ValidationError('请使用有效账户创建商品')
+    if not variants:
+        raise ValidationError('请至少填写一个商品')
+    quantities = [row['initial_stock'] for row in variants]
+    if any(type(quantity) is not int or not 0 <= quantity <= 2147483647 for quantity in quantities):
+        raise ValidationError('初始库存必须是非负整数')
+    if any(quantities) and not operator.has_perm('inventory.change_inventory'):
+        raise ValidationError('您没有初始入库权限，请将初始库存设为 0')
+    for field, label in [('barcode', '条码'), ('size', '尺码')]:
+        if len({row[field] for row in variants}) != len(variants):
+            raise ValidationError(f'本次提交的{label}不能重复')
+
+    fields = ('name', 'category', 'color', 'description', 'price', 'cost', 'specification', 'manufacturer')
+    shared = {field: common_data[field] for field in fields if field in common_data}
+    products = [Product(**shared, barcode=row['barcode'], size=row['size'], is_active=True) for row in variants]
+    warning_level = common_data.get('warning_level')
+    if warning_level is None:
+        warning_level = 10
+    for product in products:
+        product.full_clean()
+        Inventory(product=product, quantity=0, warning_level=warning_level).full_clean(exclude=['product'])
+
+    # 文件存储不属于数据库事务，失败时单独清理本次新上传的文件。
+    saved_files = []
+    try:
+        with transaction.atomic():
+            upload = common_data.get('image')
+            if upload:
+                image_field = Product._meta.get_field('image')
+                image_path = image_field.storage.save(
+                    image_field.generate_filename(products[0], upload.name), upload,
+                    max_length=image_field.max_length,
+                )
+                saved_files.append((image_field.storage, image_path))
+                for product in products:
+                    product.image = image_path
+
+            product_type = ContentType.objects.get_for_model(Product)
+            stock_type = ContentType.objects.get_for_model(Inventory)
+            for product, quantity in zip(products, quantities):
+                product.save()
+                stock = Inventory.objects.create(product=product, quantity=0, warning_level=warning_level)
+                identity = f'{product.name} | {product.get_color_display()} | {product.get_size_display()} | {product.barcode}'
+                OperationLog.objects.create(
+                    operator=operator, operation_type='OTHER', details=f'新增商品：{identity}',
+                    related_object_id=product.pk, related_content_type=product_type,
+                )
+                if quantity:
+                    success, _, _ = update_inventory(product, quantity, 'IN', operator, notes='新增商品：初始入库')
+                    if not success:
+                        raise ValidationError('初始入库失败，本次商品均未保存，请重试')
+                    OperationLog.objects.create(
+                        operator=operator, operation_type='INVENTORY',
+                        details=f'新增商品初始入库：{identity}，数量：{quantity}',
+                        related_object_id=stock.pk, related_content_type=stock_type,
+                    )
+
+            for image in additional_images:
+                image.product = products[0]
+                if image.image and not image.image._committed:
+                    image.image.save(image.image.name, image.image.file, save=False)
+                    saved_files.append((image.image.storage, image.image.name))
+                image.save()
+        return products
+    except Exception:
+        for storage, path in saved_files:
+            try:
+                storage.delete(path)
+            except Exception:
+                logger.exception('清理新增商品图片失败：%s', path)
+        raise
 
 
 def import_products_from_csv(csv_file, user):
@@ -144,4 +227,4 @@ def get_product_with_inventory(product_id):
             'inventory': inventory
         }
     except (Product.DoesNotExist, Inventory.DoesNotExist):
-        return None 
+        return None

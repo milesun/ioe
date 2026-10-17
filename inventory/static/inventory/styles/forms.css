@@ -1,4 +1,72 @@
 /* HeroUI editor fields: one field rhythm and one action footer. */
+.product-create-modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.product-variants {
+    border-top: 1px solid var(--separator);
+}
+
+.product-variants h2 {
+    font-size: 16px;
+    margin: 0 0 12px;
+}
+
+.product-size-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.product-size-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border: 1px solid var(--separator);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.product-size-option:has(input:checked) {
+    background: var(--default);
+    border-color: var(--foreground);
+}
+
+.product-variants .description {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.product-variant-table-wrap {
+    position: relative;
+    overflow-x: auto;
+}
+
+.product-variant-table {
+    width: 100%;
+    min-width: 420px;
+    border-collapse: collapse;
+}
+
+.product-variant-table :is(th,td) {
+    padding: 10px 8px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--separator);
+}
+
+.product-variant-table th:first-child { width: 90px; }
+.product-variant-table th:last-child { width: 140px; }
+.product-variant-table input { width: 100%; }
+.product-variant-table .field-error { color: var(--danger-text); font-size: 12px; }
+.product-variant-summary { font-size: 13px; margin: 16px 0 0; }
+.product-variant-summary strong { font-variant-numeric: tabular-nums; }
+
 .hero-form {
     min-width: 0;
 }

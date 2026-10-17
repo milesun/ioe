@@ -1,0 +1,52 @@
+{% extends 'inventory/base.html' %}
+{% load i18n static %}
+{% block title %}{% translate '批量新增商品' %} - {{ block.super }}{% endblock %}
+{% block content %}
+{% include 'inventory/product/includes/create_modes.html' %}
+<form method="post" enctype="multipart/form-data" id="product-form" class="hero-form card editor-card" data-variant-form>
+    {% csrf_token %}<input type="hidden" name="mode" value="bulk">
+    {% if form.errors or variants.errors or variants.non_form_errors %}
+    <div class="alert alert-danger" role="alert" id="product-form-errors" tabindex="-1">
+        <strong>{% translate '保存失败，本次商品均未新增。请修改以下问题。' %}</strong>
+        {{ form.non_field_errors }}{{ variants.non_form_errors }}
+        {% for field in form %}{% for error in field.errors %}<div>{{ field.label }}：{{ error }}</div>{% endfor %}{% endfor %}
+        {% for row in variants %}{% for field in row %}{% for error in field.errors %}<div>{{ row.size_label }} · {{ field.label }}：{{ error }}</div>{% endfor %}{% endfor %}{% endfor %}
+    </div>
+    {% endif %}
+    <div class="card__content product-editor-grid">
+        <div class="editor-grid">
+            {% for field in form %}{% if field.name != 'image' and field.name != 'selected_sizes' %}{% include 'inventory/includes/ui_field.html' %}{% endif %}{% endfor %}
+        </div>
+        <div class="editor-media">
+            {% include 'inventory/includes/ui_field.html' with field=form.image %}
+            {% if needs_image_reselect %}<div class="description">{% translate '请重新选择图片后再保存' %}</div>{% endif %}
+            <div class="image-preview"><i class="bi bi-image" aria-hidden="true"></i></div>
+            <p class="description">{% translate '所选尺码共用这张图片、颜色和价格，每个尺码会创建独立商品。' %}</p>
+        </div>
+    </div>
+    <section class="card__content product-variants" aria-labelledby="variant-heading">
+        <h2 id="variant-heading">{% translate '选择尺码，填写条码和库存' %}</h2>
+        <div class="product-size-options">
+            {% for checkbox in form.selected_sizes %}<label class="product-size-option">{{ checkbox.tag }}<span>{{ checkbox.choice_label }}</span></label>{% endfor %}
+        </div>
+        {% for error in form.selected_sizes.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+        <p class="description">{% if can_set_initial_stock %}{% translate '每个尺码填写独立条码；初始库存默认为 0，大于 0 时自动生成入库流水。' %}{% else %}{% translate '暂无入库权限，初始库存固定为 0，可先创建商品档案。' %}{% endif %}</p>
+        {{ variants.management_form }}
+        <div class="product-variant-table-wrap">
+            <table class="product-variant-table">
+                <thead><tr><th scope="col">{% translate '尺码' %}</th><th scope="col">{% translate '商品条码' %}</th><th scope="col">{% translate '初始库存' %}</th></tr></thead>
+                <tbody data-variant-rows>{% for row in variants %}{% include 'inventory/product/includes/variant_row.html' %}{% endfor %}</tbody>
+            </table>
+        </div>
+        <p class="description" data-variant-empty>{% translate '请先勾选需要新增的尺码。' %}</p>
+        <p class="product-variant-summary" aria-live="polite">{% translate '将新增' %} <strong data-variant-count>0</strong> {% translate '个商品，初始入库共' %} <strong data-variant-quantity>0</strong> {% translate '件' %}</p>
+        <noscript><p class="field-error">{% translate '批量新增需要启用 JavaScript，也可以使用单个新增。' %}</p></noscript>
+    </section>
+    <div class="card__footer editor-actions">
+        <a href="{% url 'product_list' %}" class="button button--secondary">{% translate '取消' %}</a>
+        <button type="submit" class="button button--primary">{% translate '保存全部商品' %}</button>
+    </div>
+</form>
+<template id="variant-row-template">{% include 'inventory/product/includes/variant_row.html' with row=variants.empty_form %}</template>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'inventory/product_create.js' %}?v=20261017-1" defer></script>{% endblock %}

@@ -1,0 +1,6 @@
+{% load i18n %}
+<tr data-variant-row data-size="{{ row.size.value|default_if_none:'' }}">
+    <th scope="row">{{ row.size }}<span data-size-label>{{ row.size_label }}</span>{% for error in row.size.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</th>
+    <td><label class="visually-hidden" for="{{ row.barcode.id_for_label }}">{{ row.size_label }} {% translate '商品条码' %}</label>{{ row.barcode }}{% for error in row.barcode.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</td>
+    <td><label class="visually-hidden" for="{{ row.initial_stock.id_for_label }}">{{ row.size_label }} {% translate '初始库存' %}</label>{{ row.initial_stock }}{% for error in row.initial_stock.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</td>
+</tr>

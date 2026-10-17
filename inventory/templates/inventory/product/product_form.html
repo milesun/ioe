@@ -2,15 +2,18 @@
 {% load i18n %}
 {% block title %}{% if form.instance.pk %}{% translate '编辑商品' %}{% else %}{% translate '新增商品' %}{% endif %} - {{ block.super }}{% endblock %}
 {% block content %}
+{% if not form.instance.pk %}{% include 'inventory/product/includes/create_modes.html' %}{% endif %}
 <form method="post" enctype="multipart/form-data" id="product-form" class="hero-form card editor-card">
     {% csrf_token %}
-    {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    {% if not form.instance.pk %}<input type="hidden" name="mode" value="single">{% endif %}
+    {% if form.errors %}<div class="alert alert-danger" role="alert" id="product-form-errors" tabindex="-1">{% translate '保存失败，请修改以下问题。' %}{{ form.non_field_errors }}{% for field in form %}{% for error in field.errors %}<div>{{ field.label }}：{{ error }}</div>{% endfor %}{% endfor %}</div>{% endif %}
     <div class="card__content product-editor-grid">
         <div class="editor-grid">
             {% for field in form %}{% if field.name != 'image' %}{% include 'inventory/includes/ui_field.html' %}{% endif %}{% endfor %}
         </div>
         <div class="editor-media">
             {% include 'inventory/includes/ui_field.html' with field=form.image %}
+            {% if needs_image_reselect %}<div class="description">{% translate '请重新选择图片后再保存' %}</div>{% endif %}
             <div class="image-preview">{% if product.image %}<img src="{{ product.image.url }}" alt="{% translate '商品图片' %}">{% else %}<i class="bi bi-image" aria-hidden="true"></i>{% endif %}</div>
         </div>
     </div>
@@ -23,6 +26,7 @@
 {% block extra_js %}
 <script>
 (() => {
+    document.querySelector('#product-form-errors')?.focus();
     const input = document.querySelector('#id_image');
     const preview = document.querySelector('.image-preview');
     let imageUrl;

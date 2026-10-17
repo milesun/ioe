@@ -1,8 +1,32 @@
 import re
 from django import forms
 from django.utils.translation import gettext as _
-from django.forms import inlineformset_factory
+from django.forms import inlineformset_factory, BaseFormSet, formset_factory
 from inventory.models import Product, Category, ProductImage, ProductBatch, Supplier
+
+
+def clean_product_barcode(barcode, exclude_pk=None):
+    barcode = re.sub(r'\s', '', barcode or '').strip()
+    if barcode and not all(character.isalnum() or character == '-' for character in barcode):
+        raise forms.ValidationError('条码只能包含数字、字母和连字符')
+    existing = Product.objects.filter(barcode=barcode)
+    if exclude_pk:
+        existing = existing.exclude(pk=exclude_pk)
+    if barcode and existing.exists():
+        raise forms.ValidationError('该条码已存在，请勿重复添加')
+    return barcode
+
+
+def initial_stock_field(can_set_initial_stock):
+    field = forms.IntegerField(
+        label=_('初始库存'), min_value=0, max_value=2147483647, initial=0, required=False,
+        help_text=_('大于 0 时自动记录一笔入库流水'),
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 1}),
+    )
+    if can_set_initial_stock is False:
+        field.widget.attrs['readonly'] = True
+        field.help_text = _('暂无入库权限，初始库存为 0，可先创建商品档案')
+    return field
 
 
 class ProductForm(forms.ModelForm):
@@ -23,6 +47,8 @@ class ProductForm(forms.ModelForm):
     # 添加库存预警级别字段
     warning_level = forms.IntegerField(
         label='预警库存',
+        min_value=0,
+        max_value=2147483647,
         help_text='库存低于此数量时将发出预警',
         required=False,
         widget=forms.NumberInput(attrs={
@@ -52,7 +78,10 @@ class ProductForm(forms.ModelForm):
         }
         
     def __init__(self, *args, **kwargs):
+        self.can_set_initial_stock = kwargs.pop('can_set_initial_stock', None)
         super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            self.fields['initial_stock'] = initial_stock_field(self.can_set_initial_stock)
         labels = {'barcode': '商品条码', 'name': '商品名称', 'category': '商品分类',
                   'color': '颜色', 'size': '尺码', 'description': '商品描述',
                   'price': '售价', 'cost': '成本价', 'image': '商品图片',
@@ -69,23 +98,8 @@ class ProductForm(forms.ModelForm):
         self.fields['category'].empty_label = _('请选择分类')
 
     def clean_barcode(self):
-        barcode = self.cleaned_data.get('barcode')
+        barcode = clean_product_barcode(self.cleaned_data.get('barcode'), self.instance.pk)
         if barcode:
-            # 移除空格和其他不可见字符
-            barcode = re.sub(r'\s', '', barcode).strip()
-            
-            # 检查是否只包含数字、字母和连字符
-            if not all(c.isalnum() or c == '-' for c in barcode):
-                raise forms.ValidationError('条码只能包含数字、字母和连字符')
-            
-            # 检查条码是否已存在（排除当前实例）
-            existing = Product.objects.filter(barcode=barcode)
-            if self.instance and self.instance.pk:
-                existing = existing.exclude(pk=self.instance.pk)
-                
-            if existing.exists():
-                raise forms.ValidationError('该条码已存在，请勿重复添加')
-                
             # 检查常见条码格式
             # 标准条码格式
             # EAN-13: 13位数字
@@ -127,6 +141,12 @@ class ProductForm(forms.ModelForm):
                 self.add_warning = '条码格式不符合常见标准格式，请确认无误'
                 
         return barcode
+
+    def clean_initial_stock(self):
+        quantity = self.cleaned_data.get('initial_stock') or 0
+        if quantity and self.can_set_initial_stock is False:
+            raise forms.ValidationError(_('您没有初始入库权限，请将初始库存设为 0'))
+        return quantity
         
     def clean(self):
         cleaned_data = super().clean()
@@ -137,6 +157,69 @@ class ProductForm(forms.ModelForm):
             self.add_warning = '当前售价低于成本价，请确认无误'
             
         return cleaned_data
+
+
+class ProductVariantCommonForm(ProductForm):
+    """复用单个新增的公共信息校验；商品由服务按尺码创建，不直接调用 save。"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ('barcode', 'size', 'initial_stock', 'is_active'):
+            self.fields.pop(name, None)
+        self.fields['selected_sizes'] = forms.MultipleChoiceField(
+            label=_('选择尺码'), choices=[(value, _(label)) for value, label in Product.SIZE_CHOICES],
+            widget=forms.CheckboxSelectMultiple(),
+            error_messages={'required': _('请至少选择一个尺码')},
+        )
+
+
+class ProductVariantRowForm(forms.Form):
+    size = forms.ChoiceField(label='尺码', choices=Product.SIZE_CHOICES, required=False, widget=forms.HiddenInput())
+    barcode = forms.CharField(label='商品条码', max_length=100, widget=forms.TextInput(attrs={
+        'class': 'form-control', 'autocomplete': 'off', 'placeholder': '输入或扫描该尺码条码',
+        'pattern': '[A-Za-z0-9-]+',
+    }))
+
+    def __init__(self, *args, can_set_initial_stock=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.can_set_initial_stock = can_set_initial_stock
+        self.fields['initial_stock'] = initial_stock_field(can_set_initial_stock)
+
+    @property
+    def size_label(self):
+        return dict(Product.SIZE_CHOICES).get(self['size'].value(), '未选择尺码')
+
+    def clean_barcode(self):
+        return clean_product_barcode(self.cleaned_data['barcode'])
+
+    def clean_initial_stock(self):
+        quantity = self.cleaned_data.get('initial_stock') or 0
+        if quantity and self.can_set_initial_stock is False:
+            raise forms.ValidationError(_('您没有初始入库权限，请将初始库存设为 0'))
+        return quantity
+
+
+class BaseProductVariantFormSet(BaseFormSet):
+    def clean(self):
+        if any(self.errors):
+            return
+        rows = [form for form in self.forms if form.cleaned_data]
+        if not rows:
+            raise forms.ValidationError(_('请至少填写一个尺码的商品明细'))
+        for name, message in [('barcode', '本次批量中的条码重复，请修改'), ('size', '同一尺码不能重复添加')]:
+            seen = {}
+            for form in rows:
+                value = form.cleaned_data.get(name)
+                if value in seen:
+                    seen[value].add_error(name, message)
+                    form.add_error(name, message)
+                else:
+                    seen[value] = form
+
+
+ProductVariantFormSet = formset_factory(
+    ProductVariantRowForm, formset=BaseProductVariantFormSet,
+    extra=0, max_num=len(Product.SIZE_CHOICES), validate_max=True,
+)
 
 
 class CategoryForm(forms.ModelForm):
@@ -403,4 +486,4 @@ class ProductImportForm(forms.Form):
             if csv_file.size > 5 * 1024 * 1024:
                 raise forms.ValidationError('文件大小不能超过5MB')
         
-        return csv_file 
+        return csv_file
